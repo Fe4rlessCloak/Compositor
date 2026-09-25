@@ -473,6 +473,7 @@ extension EditorSession {
         canAdjustColors && !isMaskSelected && selection?.isEmpty == false && filterEdit == nil && hueSaturation == nil
     }
     func beginFilter(_ kind: FilterKind) {
+        guard prepareForOutsideDocumentAction() else { return }
         if kind == .contentAwareFill && !canContentAwareFill { return }
         guard filterEdit == nil, hueSaturation == nil, kind == .vignette ? canVignette : canAdjustColors else { NSSound.beep(); return }
         if gradientEdit != nil {

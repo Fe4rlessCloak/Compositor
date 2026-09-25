@@ -156,6 +156,22 @@ extension EditorSession {
         return applyText(draft)
     }
 
+    /// Commits text previews before an operation reads the document's layer pixels.
+    @discardableResult
+    func prepareForOutsideDocumentAction() -> Bool {
+        if let picker = colorPicker {
+            switch picker.target {
+            case .text:
+                closeColorPicker(commit: true)
+            case .palette(background: false) where picker.editedText?.draftID == textDraft?.id && textDraft != nil:
+                closeColorPicker(commit: true)
+            default:
+                break
+            }
+        }
+        return finishText()
+    }
+
     func cancelText() { textDraft = nil; canvasFocusRequest += 1 }
 
     func beginText(in rect: CGRect) {

@@ -429,6 +429,7 @@ extension EditorSession {
     }
 
     func beginHueSaturation() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard hueSaturation == nil, canAdjustColors else { NSSound.beep(); return }
         commitTransform()
         if gradientEdit != nil { resolveGradient() }

@@ -74,6 +74,21 @@ struct TypeToolTests {
         #expect(session.foregroundColor == PaletteColor(red: 0, green: 0, blue: 1))
     }
 
+    @Test func filterPreviewUsesCommittedTextDraft() throws {
+        let session = makeSession()
+        session.beginText(at: CGPoint(x: 40, y: 50))
+        session.textDraft?.style.content = "Preview me"
+
+        session.beginFilter(.gaussianBlur)
+
+        #expect(session.textDraft == nil)
+        #expect(session.activeLayer?.liveText?.style.content == "Preview me")
+        #expect(session.filterEdit?.original.image === session.activeLayer?.asset?.image)
+        #expect(session.filterEdit != nil)
+        session.cancelFilter()
+        #expect(session.activeLayer?.liveText?.style.content == "Preview me")
+    }
+
     @Test func transformsDuplicatesAndClippingKeepTextEditable() throws {
         let session = makeSession()
         session.beginText(at: CGPoint(x: 20, y: 20))

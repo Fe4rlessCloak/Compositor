@@ -145,6 +145,7 @@ final class LevelsEdit {
 
 extension EditorSession {
     func beginLevels() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard levels == nil, hueSaturation == nil, canAdjustColors else { return }
         if gradientEdit != nil {
             Task { await commitGradient(); beginLevels() }
