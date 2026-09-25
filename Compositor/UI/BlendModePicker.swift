@@ -21,7 +21,7 @@ struct BlendModePicker: NSViewRepresentable {
         return button
     }
     func updateNSView(_ button: NSPopUpButton, context: Context) {
-        button.isEnabled = session.canEditAppearance
+        button.isEnabled = session.canRequestAppearanceEdit
         if !context.coordinator.tracking {
             button.selectItem(withTitle: (session.activeLayer?.blendMode ?? .normal).rawValue)
         }
@@ -37,6 +37,7 @@ struct BlendModePicker: NSViewRepresentable {
         private var highlightedMode: LayerBlendMode?
         init(session: EditorSession) { self.session = session }
         func menuWillOpen(_ menu: NSMenu) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             tracking = true
             layerID = session.activeLayerID
             highlightedMode = nil

@@ -37,6 +37,10 @@ extension EditorSession {
         guard canEditLayers, let layer = activeLayer, !layer.isGroup || isMaskSelected, selection?.isEmpty != true else { return false }
         return isMaskSelected ? layer.mask != nil : layer.asset != nil
     }
+    var canRequestCopyPixels: Bool {
+        guard canRequestPixelEdit, let layer = activeLayer else { return hasCommittableNewTextDraft }
+        return hasCommittableNewTextDraft || (isMaskSelected ? layer.mask != nil : layer.asset != nil)
+    }
 
     /// The active layer's pixels (or mask as opaque gray) exactly as they sit on the canvas,
     /// clipped to the selection (soft edges kept), or the whole canvas without one.
@@ -64,6 +68,10 @@ extension EditorSession {
     var canCopyMerged: Bool {
         canEditLayers && selection?.isEmpty != true && document?.renderLayers.contains { $0.asset != nil } == true
     }
+    var canRequestCopyMerged: Bool {
+        canRequestLayerEdit && selection?.isEmpty != true
+            && (hasCommittableNewTextDraft || document?.renderLayers.contains { $0.asset != nil } == true)
+    }
 
     /// Shift-Cmd-C (Copy Merged): the selection across every visible layer, composited as
     /// the canvas shows it, including opacity, blend modes, and masks.
@@ -87,6 +95,7 @@ extension EditorSession {
     }
 
     func copyMergedSelection() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canCopyMerged else { return }
         do {
             guard let copied = try renderMergedPixels() else { NSSound.beep(); return }
@@ -97,10 +106,14 @@ extension EditorSession {
     /// Copy with no selection copies the layer itself, for Paste here or in another project. That works for folders
     /// and adjustments too, which have no pixels of their own to copy.
     var canCopyLayer: Bool { canEditLayers && activeLayer != nil && selection == nil && !isMaskSelected }
+    var canRequestCopyLayer: Bool {
+        canRequestLayerEdit && (hasCommittableNewTextDraft || activeLayer != nil) && selection == nil && !isMaskSelected
+    }
 
     /// Cmd-C: copies the selected pixels (or the whole layer) for Paste, and to the system
     /// pasteboard as PNG for other apps.
     func copySelection() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canCopyPixels || canCopyLayer, let layer = activeLayer else { return }
         guard canCopyPixels else {
             let pasteboard = NSPasteboard.general
@@ -130,6 +143,7 @@ extension EditorSession {
 
     /// Cmd-X: copy, then clear the selected pixels.
     func cutSelection() async {
+        guard prepareForOutsideDocumentAction() else { return }
         guard selection != nil, canCopyPixels else { return }
         copySelection()
         await clearSelectedPixels()
@@ -144,6 +158,7 @@ extension EditorSession {
     /// Cmd-V: pastes as a new layer above the active one. Pixels copied here go back exactly
     /// where they came from; images copied in other apps are centered.
     func paste() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canPaste, let document else { return }
         let pasteboard = NSPasteboard.general
         if let clip = pixelClipboard, pasteboard.changeCount == clip.changeCount {
@@ -159,6 +174,7 @@ extension EditorSession {
     /// Cmd-J (Layer via Copy): the selection's pixels become a new layer in place; with no
     /// selection the whole layer is duplicated.
     func layerViaCopy() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, let layer = activeLayer, selection?.isEmpty != true else { return }
         // Without a selection it duplicates, folders included; with one it copies pixels, which a folder has none of.
         guard selection != nil else { duplicateActiveLayer(); return }
@@ -178,6 +194,7 @@ extension EditorSession {
 
     /// ⌘J and Duplicate Layer: every selected layer, as Photoshop does.
     func duplicateActiveLayer() {
+        guard prepareForOutsideDocumentAction() else { return }
         duplicateLayers(copiedLayerIDs())
     }
 
@@ -248,8 +265,9 @@ extension EditorSession {
 
     /// Inserts pixels as a new layer above the active one (inside its folder), all in one undo
     /// step. Pasting drops the selection, as in Photoshop; a drawn shape keeps it.
-    func addPixelLayer(_ image: CGImage, at origin: CGPoint, name: String, editName: String, dropsSelection: Bool = true, shape: LayerShape? = nil, text: LayerText? = nil) {
-        guard let document, let thumbnail = try? PixelInvert.thumbnail(of: image) else { return }
+    @discardableResult
+    func addPixelLayer(_ image: CGImage, at origin: CGPoint, name: String, editName: String, dropsSelection: Bool = true, shape: LayerShape? = nil, text: LayerText? = nil) -> Bool {
+        guard let document, let thumbnail = try? PixelInvert.thumbnail(of: image) else { return false }
         var layer = ImageLayer(asset: ImportedImage(image: image, thumbnail: thumbnail, name: name), origin: origin)
         layer.name = name
         layer.shape = shape
@@ -262,6 +280,7 @@ extension EditorSession {
         if dropsSelection { self.document?.selection = nil }
         activeLayerID = layer.id
         endEdit()
+        return self.document?.layers.contains(where: { $0.id == layer.id }) == true
     }
 
     func nextLayerName() -> String {

@@ -62,7 +62,7 @@ struct NativeLayerList: NSViewRepresentable {
             rowDetails = Dictionary(uniqueKeysWithValues: entries.map { ($0.layer.id, $0) })
             let expansionChanged = oldCollapsed != session.collapsedGroupIDs
             oldCollapsed = session.collapsedGroupIDs
-            let enabled = session.canEditLayers
+            let enabled = session.canRequestLayerEdit
             synchronizing = true
             defer { synchronizing = false }
             let old = rows
@@ -182,7 +182,7 @@ struct NativeLayerList: NSViewRepresentable {
             hideAllItem.isEnabled = validateMenuItem(hideAllItem)
             addMaskSubmenu.addItem(hideAllItem)
             addMaskItem.submenu = addMaskSubmenu
-            addMaskItem.isEnabled = session.canEditMask && session.activeLayer?.mask == nil
+            addMaskItem.isEnabled = session.canRequestMaskEdit && session.activeLayer?.mask == nil
             menu.addItem(addMaskItem)
 
             // 9. Enable Mask / Disable Mask
@@ -220,95 +220,107 @@ struct NativeLayerList: NSViewRepresentable {
         func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
             switch menuItem.action {
             case #selector(duplicateLayerAction):
-                return session.canEditLayers && session.activeLayer != nil
+                return session.canRequestLayerEdit && session.activeLayer != nil
             case #selector(renameLayerAction):
-                return session.canEditLayers && session.activeLayer != nil && session.selectedLayerIDs.count == 1
+                return session.canRequestLayerEdit && session.activeLayer != nil && session.selectedLayerIDs.count == 1
             case #selector(deleteLayerAction):
-                return session.canEditLayers && session.activeLayer != nil
+                return session.canRequestLayerEdit && session.activeLayer != nil
             case #selector(toggleClippingMaskAction):
-                return session.activeLayerID.map { session.canToggleClippingMask($0) } ?? false
+                return session.activeLayerID.map { session.canToggleClippingMask($0, ignoringText: true) } ?? false
             case #selector(groupSelectedLayersAction):
-                return session.canEditLayers && session.document != nil && (session.document?.layers.count ?? 0) < 10_000 && !session.selectedLayerIDs.isEmpty
+                return session.canRequestLayerEdit && session.document != nil && (session.document?.layers.count ?? 0) < 10_000 && !session.selectedLayerIDs.isEmpty
             case #selector(moveOutOfFolderAction):
-                return session.canEditLayers && session.activeLayer?.parentID != nil
+                return session.canRequestLayerEdit && session.activeLayer?.parentID != nil
             case #selector(mergeLayersAction):
-                return session.canMergeLayers
+                return session.canRequestMergeLayers
             case #selector(addWhiteMaskAction), #selector(addBlackMaskAction):
-                return session.canEditMask && session.activeLayer?.mask == nil
+                return session.canRequestMaskEdit && session.activeLayer?.mask == nil
             case #selector(toggleMaskAction):
-                return session.canEditMask && session.activeLayer?.mask != nil
+                return session.canRequestMaskEdit && session.activeLayer?.mask != nil
             case #selector(deleteMaskAction):
-                return session.canEditMask && session.activeLayer?.mask != nil
+                return session.canRequestMaskEdit && session.activeLayer?.mask != nil
             case #selector(toggleMaskLinkAction):
-                return session.canEditLayers && session.activeLayer?.mask != nil && session.activeLayer?.isGroup == false && session.activeLayer?.adjustment == nil
+                return session.canRequestLayerEdit && session.activeLayer?.mask != nil && session.activeLayer?.isGroup == false && session.activeLayer?.adjustment == nil
             case #selector(toggleVisibilityAction):
-                return session.canEditLayers && session.activeLayer != nil
+                return session.canRequestLayerEdit && session.activeLayer != nil
             default:
                 if menuItem.submenu != nil && menuItem.title == "Add Mask" {
-                    return session.canEditMask && session.activeLayer?.mask == nil
+                    return session.canRequestMaskEdit && session.activeLayer?.mask == nil
                 }
                 return true
             }
         }
 
         @objc func duplicateLayerAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             session.duplicateActiveLayer()
         }
 
         @objc func renameLayerAction(_ sender: Any?) {
-            guard session.canEditLayers, let id = session.activeLayerID else { return }
+            guard session.prepareForOutsideDocumentAction(), session.canEditLayers, let id = session.activeLayerID else { return }
             session.renamingLayerID = id
         }
 
         @objc func deleteLayerAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             session.deleteLayerOrMask()
         }
 
         @objc func toggleClippingMaskAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             if let id = session.activeLayerID { session.toggleClippingMask(id) }
         }
 
         @objc func groupSelectedLayersAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             session.groupSelectedLayers()
         }
 
         @objc func moveOutOfFolderAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             session.moveActiveLayerOutOfGroup()
         }
 
         @objc func mergeLayersAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             session.mergeLayers()
         }
 
         @objc func addWhiteMaskAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             guard let id = session.activeLayerID else { return }
             session.selectLayerTarget(id, mask: false)
             session.addMask(revealing: true)
         }
 
         @objc func addBlackMaskAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             guard let id = session.activeLayerID else { return }
             session.selectLayerTarget(id, mask: false)
             session.addMask(revealing: false)
         }
 
         @objc func toggleMaskAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             guard let id = session.activeLayerID else { return }
             session.selectLayerTarget(id, mask: false)
             session.toggleLayerMask()
         }
 
         @objc func deleteMaskAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             guard let id = session.activeLayerID else { return }
             session.selectLayerTarget(id, mask: false)
             session.deleteLayerMask()
         }
 
         @objc func toggleMaskLinkAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             if let id = session.activeLayerID { session.toggleMaskLink(id) }
         }
 
         @objc func toggleVisibilityAction(_ sender: Any?) {
+            guard session.prepareForOutsideDocumentAction() else { return }
             guard let id = session.activeLayerID else { return }
             session.toggleLayerVisibility(id)
         }
@@ -344,7 +356,7 @@ struct NativeLayerList: NSViewRepresentable {
             session.selectLayerTarget(rows[table.clickedRow].id, mask: false)
         }
         @objc func renameClickedLayer(_ table: NSTableView) {
-            guard session.canEditLayers, rows.indices.contains(table.clickedRow) else { return }
+            guard session.canRequestLayerEdit, rows.indices.contains(table.clickedRow), session.prepareForOutsideDocumentAction(), session.canEditLayers else { return }
             let id = rows[table.clickedRow].id
             session.activeLayerID = id
             // On the thumbnail (or another of the row's controls) a double-click opens what the layer holds: its
@@ -358,7 +370,7 @@ struct NativeLayerList: NSViewRepresentable {
             session.renamingLayerID = id
         }
         func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-            guard session.canEditLayers, rows.indices.contains(row) else { return nil }
+            guard session.canRequestLayerEdit, rows.indices.contains(row), session.prepareForOutsideDocumentAction(), session.canEditLayers else { return nil }
             let item = NSPasteboardItem()
             item.setString(rows[row].id.uuidString, forType: Self.layerType)
             return item
@@ -379,7 +391,7 @@ struct NativeLayerList: NSViewRepresentable {
                 tableView.setDropRow(target, dropOperation: .on)
                 return .copy
             }
-            guard session.canEditLayers, info.draggingSource as? NSTableView === tableView,
+            guard session.canRequestLayerEdit, info.draggingSource as? NSTableView === tableView,
                   (0...rows.count).contains(row) else { return [] }
             let ids = draggedLayers(info)
             guard !ids.isEmpty else { return [] }
@@ -404,7 +416,7 @@ struct NativeLayerList: NSViewRepresentable {
                 session.copyMask(from: source, to: rows[row].id)
                 return true
             }
-            guard info.draggingSource as? NSTableView === tableView else { return false }
+            guard session.prepareForOutsideDocumentAction(), info.draggingSource as? NSTableView === tableView else { return false }
             let ids = draggedLayers(info)
             guard !ids.isEmpty else { return false }
             let copying = info.draggingSourceOperationMask == .copy
@@ -576,12 +588,12 @@ final class LayerTableView: NSTableView {
         guard let session, session.layerRows.indices.contains(index) else { return nil }
         let layer = session.layerRows[index].layer
         if let thumbnail = thumbnail(at: point), thumbnail.isMaskTarget, !thumbnail.isHidden {
-            return session.canEditLayers ? CanvasView.duplicateCursor : NSCursor.arrow
+            return session.canRequestLayerEdit ? CanvasView.duplicateCursor : NSCursor.arrow
         }
         guard isClippingZone(point, row: index) else {
-            return session.canEditLayers ? CanvasView.duplicateCursor : NSCursor.arrow
+            return session.canRequestLayerEdit ? CanvasView.duplicateCursor : NSCursor.arrow
         }
-        guard session.canToggleClippingMask(layer.id) else { return NSCursor.arrow }
+        guard session.canToggleClippingMask(layer.id, ignoringText: true) else { return NSCursor.arrow }
         return layer.maskSourceID == nil ? Self.createClippingCursor : Self.releaseClippingCursor
     }
 
@@ -648,7 +660,7 @@ final class LayerTableView: NSTableView {
            thumbnail(at: point)?.isMaskTarget != true,
            let entries = session?.layerRows, entries.indices.contains(row) {
             session?.effectSelection = nil
-            session?.toggleClippingMask(entries[row].layer.id)
+            if session?.prepareForOutsideDocumentAction() == true { session?.toggleClippingMask(entries[row].layer.id) }
             refreshClippingCursor(event.modifierFlags)
             return
         }
@@ -999,17 +1011,17 @@ private final class LayerCell: NSTableCellView, NSTextFieldDelegate {
         return true
     }
     @objc private func selectImage() { if let layerID { session?.selectLayerTarget(layerID, mask: false) } }
-    @objc private func toggleMaskLink() { if let layerID { session?.toggleMaskLink(layerID) } }
+    @objc private func toggleMaskLink() { if let layerID, session?.prepareForOutsideDocumentAction() == true { session?.toggleMaskLink(layerID) } }
     /// Whether a window point lands on one of the row's buttons rather than its name.
     func isOnControl(_ windowPoint: NSPoint) -> Bool {
         [eye, disclosure, thumbnail, linkButton, maskThumbnail].contains { !$0.isHidden && $0.bounds.contains($0.convert(windowPoint, from: nil)) }
     }
     @objc func loadMaskSelection() {
-        guard let layerID else { return }
+        guard let layerID, session?.prepareForOutsideDocumentAction() == true else { return }
         session?.loadMaskSelection(layerID: layerID, mode: Self.loadMode)
     }
     @objc func loadLayerSelection() {
-        guard let layerID else { return }
+        guard let layerID, session?.prepareForOutsideDocumentAction() == true else { return }
         session?.loadLayerSelection(layerID: layerID, mode: Self.loadMode)
     }
     /// Cmd-Shift adds and Cmd-Option subtracts, as in Photoshop.
@@ -1024,7 +1036,7 @@ private final class LayerCell: NSTableCellView, NSTextFieldDelegate {
     }
     @objc private func toggleExpansion() { if let layerID { session?.toggleGroupExpansion(layerID) } }
     private var thumbnailKey: ThumbnailKey?
-    @objc private func toggleVisibility() { if let layerID { session?.toggleLayerVisibility(layerID) } }
+    @objc private func toggleVisibility() { if let layerID, session?.prepareForOutsideDocumentAction() == true { session?.toggleLayerVisibility(layerID) } }
     /// Adjustment layers' icons, a little smaller than a bare symbol shows in the thumbnail (roughly
     /// 15.5 pt instead of 18). Drawn into a 36 pt template image (the thumbnail's size), which the button
     /// shows 1:1 and still tints; 1.21× the symbol's natural size lands the glyph there.
@@ -1082,7 +1094,7 @@ private final class LayerEffectRow: NSView, NSDraggingSource {
         eye.imagePosition = .imageOnly
         eye.contentTintColor = .secondaryLabelColor
         eye.target = self; eye.action = #selector(toggle)
-        eye.isEnabled = session.canEditLayers
+        eye.isEnabled = session.canRequestLayerEdit
         eye.setAccessibilityLabel((enabled ? "Hide " : "Show ") + kind.rawValue)
         label.font = .systemFont(ofSize: 11)
         label.textColor = enabled ? .labelColor : .secondaryLabelColor
@@ -1119,7 +1131,7 @@ private final class LayerEffectRow: NSView, NSDraggingSource {
     }
     override func mouseDown(with event: NSEvent) {
         copyDown = nil
-        if event.modifierFlags.contains(.option), !event.modifierFlags.contains(.command), session?.canEditLayers == true {
+        if event.modifierFlags.contains(.option), !event.modifierFlags.contains(.command), session?.canRequestLayerEdit == true {
             copyDown = event
         } else { select(editing: event.clickCount > 1) }
     }
@@ -1132,7 +1144,8 @@ private final class LayerEffectRow: NSView, NSDraggingSource {
         let dy = event.locationInWindow.y - down.locationInWindow.y
         guard dx * dx + dy * dy >= 9 else { return }
         copyDown = nil
-        guard event.modifierFlags.contains(.option), session?.canEditLayers == true else { return }
+        guard event.modifierFlags.contains(.option), session?.prepareForOutsideDocumentAction() == true,
+              session?.canEditLayers == true else { return }
         let item = NSPasteboardItem()
         item.setString(layerID.uuidString + ":" + kind.rawValue, forType: NativeLayerList.Coordinator.effectType)
         let dragging = NSDraggingItem(pasteboardWriter: item)
@@ -1149,7 +1162,7 @@ private final class LayerEffectRow: NSView, NSDraggingSource {
     }
     func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
     override func accessibilityPerformPress() -> Bool { select(editing: false); return true }
-    @objc private func toggle() { session?.toggleEffect(kind, on: layerID) }
+    @objc private func toggle() { if session?.prepareForOutsideDocumentAction() == true { session?.toggleEffect(kind, on: layerID) } }
     func updateSelection() {
         let selected = session?.selectedEffect == LayerEffectSelection(layerID: layerID, kind: kind)
         layer?.backgroundColor = selected ? NSColor.controlAccentColor.withAlphaComponent(0.3).cgColor : NSColor.clear.cgColor
@@ -1287,7 +1300,7 @@ private final class EyeSwipeButton: NSButton {
     var layerID: UUID?
     weak var session: EditorSession?
     override func mouseDown(with event: NSEvent) {
-        guard isEnabled, let layerID, let session, let window,
+        guard isEnabled, let layerID, let session, let window, session.prepareForOutsideDocumentAction(),
               let visible = session.beginVisibilitySwipe(layerID) else { return }
         // Showing or hiding a layer reloads its row, which can take this very button out of the list; tracking the
         // drag here, rather than waiting for mouseDragged and mouseUp to arrive, keeps the undo step from being left

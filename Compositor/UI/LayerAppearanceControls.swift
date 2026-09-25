@@ -11,7 +11,7 @@ struct LayerAppearanceControls: View {
             HStack {
                 Text("Blend").font(.caption)
                 BlendModePicker(session: session)
-            }.disabled(!session.canEditAppearance)
+            }.disabled(!session.canRequestAppearanceEdit)
             HStack(spacing: 6) {
                 Text("Opacity").font(.caption)
                     .scrubbable(sensitivity: 1,
@@ -34,7 +34,7 @@ struct LayerAppearanceControls: View {
                     Text("%").font(.caption)
                 }
             }
-        }.padding(12).disabled(!session.canEditOpacity)
+        }.padding(12).disabled(!session.canRequestOpacityEdit)
             .onAppear { sync() }
             .onChange(of: session.activeLayer?.opacity) { _, _ in if !focused { sync() } }
             .onDisappear { session.finishOpacityEdit() }

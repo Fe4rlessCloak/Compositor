@@ -32,32 +32,32 @@ struct LayersPanel: View {
             Divider()
             // No spacing: each button's hit area supplies it (8 pt either side makes the 16 pt gap).
             HStack(spacing: 0) {
-                Button { session.addBlankLayer() } label: { Image(systemName: "plus.square").footerHitArea() }
+                Button { if session.prepareForOutsideDocumentAction() { session.addBlankLayer() } } label: { Image(systemName: "plus.square").footerHitArea() }
                     .help("New blank layer (⇧⌘N)").accessibilityLabel("New blank layer")
-                    .accessibilityIdentifier("addBlankLayer").disabled(!session.canEditLayers)
-                Button { session.groupSelectedLayers() } label: { Image(systemName: "folder.badge.plus").footerHitArea() }
-                    .help("Group selected layers (⌘G)").accessibilityLabel("New folder").disabled(!session.canEditLayers)
+                    .accessibilityIdentifier("addBlankLayer").disabled(!session.canRequestLayerEdit)
+                Button { if session.prepareForOutsideDocumentAction() { session.groupSelectedLayers() } } label: { Image(systemName: "folder.badge.plus").footerHitArea() }
+                    .help("Group selected layers (⌘G)").accessibilityLabel("New folder").disabled(!session.canRequestLayerEdit)
                 LayerMaskMenu(session: session)
                 Menu {
                     ForEach(LayerEffectKind.allCases, id: \.self) { kind in
-                        Button(kind.rawValue + "…") { session.addEffect(kind) }
+                        Button(kind.rawValue + "…") { if session.prepareForOutsideDocumentAction() { session.addEffect(kind) } }
                     }
                 } label: { Image(systemName: "sparkles").footerHitArea() }
                     .menuStyle(.borderlessButton).fixedSize()
                     .help("Layer effects: stroke and drop shadow").accessibilityLabel("Layer effects")
-                    .accessibilityIdentifier("layerEffects").disabled(!session.canEditEffects)
+                    .accessibilityIdentifier("layerEffects").disabled(!session.canRequestEffectsEdit)
                 Menu {
                     ForEach(AdjustmentKind.allCases, id: \.self) { kind in
-                        Button(kind.rawValue) { session.addAdjustment(kind) }
+                        Button(kind.rawValue) { if session.prepareForOutsideDocumentAction() { session.addAdjustment(kind) } }
                     }
                 } label: { Image(systemName: "circle.lefthalf.filled").footerHitArea() }
-                    .menuStyle(.borderlessButton).fixedSize().help("New adjustment layer").disabled(!session.canEditLayers)
+                    .menuStyle(.borderlessButton).fixedSize().help("New adjustment layer").disabled(!session.canRequestLayerEdit)
                 Spacer()
-                Button { session.deleteLayerOrMask() } label: { Image(systemName: "trash").footerHitArea() }
+                Button { if session.prepareForOutsideDocumentAction() { session.deleteLayerOrMask() } } label: { Image(systemName: "trash").footerHitArea() }
                     .help(session.selectedEffect != nil ? "Delete selected effect" : session.isMaskSelected ? "Delete layer mask" : session.selectedLayerIDs.count > 1 ? "Delete selected layers" : "Delete selected layer")
                     .accessibilityLabel(session.selectedEffect != nil ? "Delete selected effect" : session.isMaskSelected ? "Delete layer mask" : session.selectedLayerIDs.count > 1 ? "Delete selected layers" : "Delete selected layer")
                     .accessibilityIdentifier("deleteLayer")
-                    .disabled(!session.canEditLayers || session.activeLayer == nil)
+                    .disabled(!session.canRequestLayerEdit || session.activeLayer == nil)
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
             .padding(.horizontal, 8).padding(.vertical, 4) // Plus the hit areas' 8 and 12: the original 16.
@@ -81,4 +81,3 @@ extension View {
             .contentShape(Rectangle())
     }
 }
-

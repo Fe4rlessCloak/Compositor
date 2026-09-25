@@ -49,12 +49,12 @@ struct CompositorApp: App {
                         applicationDelegate.showEditor?()
                         Task { await applicationDelegate.projects.newCanvas() }
                     }.configuredKeyboardShortcut("n")
-                        .disabled(!applicationDelegate.projects.canStart)
+                        .disabled(!applicationDelegate.projects.canRequestStart)
                     Button("Open Project…") {
                         applicationDelegate.showEditor?()
                         Task { await applicationDelegate.projects.open() }
                     }
-                        .configuredKeyboardShortcut("o").disabled(!applicationDelegate.projects.canStart)
+                        .configuredKeyboardShortcut("o").disabled(!applicationDelegate.projects.canRequestStart)
                     Menu("Open Recent") {
                         ForEach(RecentProjects.shared.urls, id: \.self) { url in
                             Button(url.deletingPathExtension().lastPathComponent) {
@@ -66,29 +66,29 @@ struct CompositorApp: App {
                         Button("Clear Menu") { RecentProjects.shared.clear() }
                             .disabled(RecentProjects.shared.urls.isEmpty)
                     }
-                        .disabled(!applicationDelegate.projects.canStart)
-                    Button("Import Images…") { session.showsImporter = true }
+                        .disabled(!applicationDelegate.projects.canRequestStart)
+                    Button("Import Images…") { if session.prepareForOutsideDocumentAction() { session.showsImporter = true } }
                         .disabled(session.levels != nil || session.showsBusy || session.isImporting || session.showsNewDocument)
                 }
                 CommandGroup(replacing: .saveItem) {
                     Button("Save") { Task { await applicationDelegate.projects.save() } }
-                        .configuredKeyboardShortcut("s").disabled(session.document == nil || !applicationDelegate.projects.canStart)
+                        .configuredKeyboardShortcut("s").disabled(session.document == nil || !applicationDelegate.projects.canRequestStart)
                     Button("Save As…") { Task { await applicationDelegate.projects.save(asNew: true) } }
                         .configuredKeyboardShortcut("s", modifiers: [.command, .shift])
-                        .disabled(session.document == nil || !applicationDelegate.projects.canStart)
+                        .disabled(session.document == nil || !applicationDelegate.projects.canRequestStart)
                     Divider()
                     Button("Export PNG…") { Task { await applicationDelegate.projects.exportPNG() } }
                         .configuredKeyboardShortcut("e", modifiers: [.command, .shift])
-                        .disabled(session.document == nil || !applicationDelegate.projects.canStart)
+                        .disabled(session.document == nil || !applicationDelegate.projects.canRequestStart)
                     Button("Export JPEG…") { Task { await applicationDelegate.projects.exportJPEG() } }
                         .configuredKeyboardShortcut("s", modifiers: [.command, .option, .shift])
-                        .disabled(session.document == nil || !applicationDelegate.projects.canStart)
+                        .disabled(session.document == nil || !applicationDelegate.projects.canRequestStart)
                     Divider()
                     Button("Close Project") {
                         if let window = applicationDelegate.projects.window {
                             Task { await applicationDelegate.projects.close(window) }
                         }
-                    }.configuredKeyboardShortcut("w").disabled(!applicationDelegate.projects.canStart)
+                    }.configuredKeyboardShortcut("w").disabled(!applicationDelegate.projects.canRequestStart)
                 }
                 // Grouped: a commands builder takes at most ten items.
                 Group {
@@ -162,23 +162,25 @@ struct CompositorApp: App {
                     // go stale — the first Paste after a Copy used to beep until something else refreshed the menu.
                     Button("Cut") {
                         if NSApp.keyWindow?.firstResponder is NSTextView { NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) }
-                        else if session.selection != nil, session.canCopyPixels { Task { await session.cutSelection() } }
+                        else if session.selection != nil, session.canRequestCopyPixels { Task { await session.cutSelection() } }
                         else { NSSound.beep() }
                     }
                         .configuredKeyboardShortcut("x")
                     Button("Copy") {
                         if NSApp.keyWindow?.firstResponder is NSTextView { NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) }
-                        else if session.canCopyPixels || session.canCopyLayer { session.copySelection() }
+                        else if session.canRequestCopyPixels || session.canRequestCopyLayer { session.copySelection() }
                         else { NSSound.beep() }
                     }
                         .configuredKeyboardShortcut("c")
                     Button("Copy Merged") { session.copyMergedSelection() }
-                        .configuredKeyboardShortcut("c", modifiers: [.command, .shift]).disabled(!session.canCopyMerged)
+                        .configuredKeyboardShortcut("c", modifiers: [.command, .shift]).disabled(!session.canRequestCopyMerged)
                     Button("Paste") {
                         if NSApp.keyWindow?.firstResponder is NSTextView { NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) }
-                        else if applicationDelegate.workspace.pasteCopiedLayer() { }
-                        else if session.canPaste { session.paste() }
-                        else { NSSound.beep() }
+                        else if session.prepareForOutsideDocumentAction() {
+                            if applicationDelegate.workspace.pasteCopiedLayer() { }
+                            else if session.canPaste { session.paste() }
+                            else { NSSound.beep() }
+                        }
                     }
                         .configuredKeyboardShortcut("v")
                 }
@@ -191,17 +193,17 @@ struct CompositorApp: App {
                             NSApp.sendAction(#selector(NSResponder.deleteWordBackward(_:)), to: nil, from: nil)
                         } else { Task { await session.fillSelection(with: .foreground) } }
                     }
-                        .configuredKeyboardShortcut(.delete, modifiers: .option).disabled(!session.canEditPixels)
+                        .configuredKeyboardShortcut(.delete, modifiers: .option).disabled(!session.canRequestPixelEdit && session.textDraft == nil)
                     Button("Fill with Background Color") {
                         if NSApp.keyWindow?.firstResponder is NSTextView {
                             NSApp.sendAction(#selector(NSResponder.deleteToBeginningOfLine(_:)), to: nil, from: nil)
                         } else { Task { await session.fillSelection(with: .background) } }
                     }
-                        .configuredKeyboardShortcut(.delete, modifiers: .command).disabled(!session.canEditPixels)
+                        .configuredKeyboardShortcut(.delete, modifiers: .command).disabled(!session.canRequestPixelEdit && session.textDraft == nil)
                     Button("Clear Selection Pixels") { Task { await session.clearSelectedPixels() } }
-                        .disabled(session.selection == nil || !session.canEditPixels)
+                        .disabled(session.selection == nil || !session.canRequestPixelEdit)
                     Button("Content-Aware Fill…") { session.beginFilter(.contentAwareFill) }
-                        .configuredKeyboardShortcut(.delete, modifiers: .shift).disabled(!session.canContentAwareFill)
+                        .configuredKeyboardShortcut(.delete, modifiers: .shift).disabled(!session.canRequestContentAwareFill)
                 }
                 CommandMenu("Select") {
                     // A field being edited keeps its own Select All: offer it to the responder chain
@@ -217,117 +219,119 @@ struct CompositorApp: App {
                         // document and nothing being edited the action simply does nothing.
                         .configuredKeyboardShortcut("a")
                     Button("Deselect") { session.deselect() }
-                        .configuredKeyboardShortcut("d").disabled(session.selection == nil || !session.canEditSelection)
+                        .configuredKeyboardShortcut("d").disabled(session.selection == nil || !session.canRequestSelectionEdit)
                     Button("Inverse") { session.invertSelection() }
                         .configuredKeyboardShortcut("i", modifiers: [.command, .shift])
-                        .disabled(session.selection == nil || !session.canEditSelection)
+                        .disabled(session.selection == nil || !session.canRequestSelectionEdit)
                     Button("Layer's Pixels") {
-                        if let id = session.activeLayerID { session.loadLayerSelection(layerID: id) }
+                        if session.prepareForOutsideDocumentAction(), let id = session.activeLayerID { session.loadLayerSelection(layerID: id) }
                     }
-                        .disabled(session.activeLayer?.asset == nil || !session.canEditSelection)
+                        .disabled((session.activeLayer?.asset == nil && !session.hasCommittableNewTextDraft) || !session.canRequestSelectionEdit)
                     Button("Subject") { Task { await session.selectSubject() } }
                         .configuredKeyboardShortcut("a", modifiers: [.command, .option])
-                        .disabled(!session.canSelectSubject)
+                        .disabled(!session.canRequestSelectSubject)
                     Button("Mask's Black Areas") {
-                        if let id = session.activeLayerID { session.loadMaskSelection(layerID: id) }
+                        if session.prepareForOutsideDocumentAction(), let id = session.activeLayerID { session.loadMaskSelection(layerID: id) }
                     }
-                        .disabled(session.activeLayer?.mask == nil || !session.canEditSelection)
+                        .disabled(session.activeLayer?.mask == nil || !session.canRequestSelectionEdit)
                     Divider()
                     Button("Expand…") { session.promptSelectionAmount(.expand) }
-                        .disabled(!session.canModifySelection)
+                        .disabled(!session.canRequestModifySelection)
                     Button("Contract…") { session.promptSelectionAmount(.contract) }
-                        .disabled(!session.canModifySelection)
+                        .disabled(!session.canRequestModifySelection)
                     Button("Feather…") { session.promptSelectionAmount(.feather) }
-                        .disabled(!session.canModifySelection)
+                        .disabled(!session.canRequestModifySelection)
                 }
                 CommandMenu("Image") {
                     Button("Curves…") { session.beginFilter(.curves) }
-                        .configuredKeyboardShortcut("m").disabled(!session.canAdjustColors || session.hueSaturation != nil)
+                        .configuredKeyboardShortcut("m").disabled(!session.canRequestColorAdjustment || session.hueSaturation != nil)
                     Button("Levels…") { session.beginLevels() }
-                        .configuredKeyboardShortcut("l").disabled(!session.canAdjustColors || session.hueSaturation != nil)
+                        .configuredKeyboardShortcut("l").disabled(!session.canRequestColorAdjustment || session.hueSaturation != nil)
                     Button("Hue/Saturation…") { session.beginHueSaturation() }
-                        .configuredKeyboardShortcut("u").disabled(!session.canAdjustColors)
+                        .configuredKeyboardShortcut("u").disabled(!session.canRequestColorAdjustment)
                     ForEach([FilterKind.blackWhite, .colorBalance, .exposure, .gradientMap, .grain], id: \.self) { kind in
                         Button("\(kind.rawValue)…") { session.beginFilter(kind) }
-                            .disabled(!session.canAdjustColors || session.hueSaturation != nil)
+                            .disabled(!session.canRequestColorAdjustment || session.hueSaturation != nil)
                     }
                     Button(session.isMaskSelected ? "Invert Mask" : "Invert") { Task { await session.invertPixels() } }
                         .configuredKeyboardShortcut("i")
-                        .disabled(!session.canInvert)
+                        .disabled(!session.canRequestInvert)
                     Divider()
                     Button("Canvas Size…") { Task { await applicationDelegate.projects.canvasSize() } }
                         .configuredKeyboardShortcut("c", modifiers: [.command, .option])
-                        .disabled(session.document == nil || !applicationDelegate.projects.canStart)
+                        .disabled(session.document == nil || !applicationDelegate.projects.canRequestStart)
                     Button("Image Size…") { Task { await applicationDelegate.projects.imageSize() } }
                         .configuredKeyboardShortcut("i", modifiers: [.command, .option])
-                        .disabled(session.document == nil || !applicationDelegate.projects.canStart)
+                        .disabled(session.document == nil || !applicationDelegate.projects.canRequestStart)
                     Button("Trim…") { Task { await applicationDelegate.projects.trim() } }
-                        .disabled(session.document == nil || !applicationDelegate.projects.canStart)
+                        .disabled(session.document == nil || !applicationDelegate.projects.canRequestStart)
                     Group {
                         Divider()
                         Button("Flip Canvas Horizontal") { session.flipCanvas(horizontally: true) }
-                            .disabled(!session.canEditLayers)
+                            .disabled(!session.canRequestLayerEdit)
                         Button("Flip Canvas Vertical") { session.flipCanvas(horizontally: false) }
-                            .disabled(!session.canEditLayers)
+                            .disabled(!session.canRequestLayerEdit)
                     }
                 }
                 CommandMenu("Filter") {
                     ForEach(FilterKind.allCases.filter { $0 != .contentAwareFill && !$0.isImageAdjustment }, id: \.self) { kind in
                         Button("\(kind.rawValue)…") { session.beginFilter(kind) }
-                            .disabled(!(kind == .vignette ? session.canVignette : session.canAdjustColors) || session.hueSaturation != nil)
+                            .disabled(!(kind == .vignette ? session.canRequestVignette : session.canRequestColorAdjustment) || session.hueSaturation != nil)
                     }
                 }
                 CommandMenu("Layer") {
                     Menu("New Adjustment Layer") {
                         ForEach(AdjustmentKind.allCases, id: \.self) { kind in
-                            Button(kind.rawValue + (kind.isEditable ? "…" : "")) { session.addAdjustment(kind) }
+                            Button(kind.rawValue + (kind.isEditable ? "…" : "")) {
+                                if session.prepareForOutsideDocumentAction() { session.addAdjustment(kind) }
+                            }
                         }
-                    }.disabled(!session.canEditLayers || session.document == nil)
+                    }.disabled(!session.canRequestLayerEdit || session.document == nil)
                     Button("Edit Adjustment…") {
-                        session.adjustmentEditingID = session.activeLayerID
-                    }.disabled(!session.canEditLayers || session.activeLayer?.adjustment == nil)
+                        if session.prepareForOutsideDocumentAction() { session.adjustmentEditingID = session.activeLayerID }
+                    }.disabled(!session.canRequestLayerEdit || session.activeLayer?.adjustment == nil)
                     Divider()
-                    Button(session.canTransformSelection ? "Transform Selection" : "Transform Layer") { session.transformCommand() }
-                        .configuredKeyboardShortcut("t").disabled(!session.canTransform && !session.canTransformSelection)
-                    Button(session.selection == nil ? "Duplicate Layer" : "Layer via Copy") { session.layerViaCopy() }
-                        .configuredKeyboardShortcut("j").disabled(!session.canCopyPixels && !(session.selection == nil && session.canEditLayers && session.activeLayer != nil))
+                    Button(session.canRequestTransformSelection ? "Transform Selection" : "Transform Layer") { session.transformCommand() }
+                        .configuredKeyboardShortcut("t").disabled(!session.canRequestTransform && !session.canRequestTransformSelection)
+                    Button(session.selection == nil ? "Duplicate Layer" : "Layer via Copy") { if session.prepareForOutsideDocumentAction() { session.layerViaCopy() } }
+                        .configuredKeyboardShortcut("j").disabled(!session.canRequestCopyPixels && !session.canRequestCopyLayer)
                     Divider()
                     Button(session.activeLayer?.maskSourceID == nil ? "Create Clipping Mask" : "Release Clipping Mask") {
-                        if let id = session.activeLayerID { session.toggleClippingMask(id) }
+                        if session.prepareForOutsideDocumentAction(), let id = session.activeLayerID { session.toggleClippingMask(id) }
                     }
                     .configuredKeyboardShortcut("g", modifiers: [.command, .option])
-                    .disabled(session.activeLayerID.map { !session.canToggleClippingMask($0) } ?? true)
+                    .disabled(session.activeLayerID.map { !session.canToggleClippingMask($0, ignoringText: true) } ?? true)
                     Divider()
-                    Button("Group Selected Layers") { session.groupSelectedLayers() }
-                        .configuredKeyboardShortcut("g").disabled(!session.canEditLayers)
-                    Button("Move Out of Folder") { session.moveActiveLayerOutOfGroup() }
-                        .disabled(!session.canEditLayers || session.activeLayer?.parentID == nil)
-                    Button("New Blank Layer") { session.addBlankLayer() }
-                        .configuredKeyboardShortcut("n", modifiers: [.command, .shift]).disabled(!session.canEditLayers)
-                    Button("Rename Layer…") { session.renamingLayerID = session.activeLayerID }
-                        .disabled(!session.canEditLayers || session.activeLayer == nil)
+                    Button("Group Selected Layers") { if session.prepareForOutsideDocumentAction() { session.groupSelectedLayers() } }
+                        .configuredKeyboardShortcut("g").disabled(!session.canRequestLayerEdit)
+                    Button("Move Out of Folder") { if session.prepareForOutsideDocumentAction() { session.moveActiveLayerOutOfGroup() } }
+                        .disabled(!session.canRequestLayerEdit || session.activeLayer?.parentID == nil)
+                    Button("New Blank Layer") { if session.prepareForOutsideDocumentAction() { session.addBlankLayer() } }
+                        .configuredKeyboardShortcut("n", modifiers: [.command, .shift]).disabled(!session.canRequestLayerEdit)
+                    Button("Rename Layer…") { if session.prepareForOutsideDocumentAction() { session.renamingLayerID = session.activeLayerID } }
+                        .disabled(!session.canRequestLayerEdit || session.activeLayer == nil)
                     Button(session.activeLayer?.isVisible == false ? "Show Layer" : "Hide Layer") {
-                        if let id = session.activeLayerID { session.toggleLayerVisibility(id) }
-                    }.disabled(!session.canEditLayers || session.activeLayer == nil)
+                        if session.prepareForOutsideDocumentAction(), let id = session.activeLayerID { session.toggleLayerVisibility(id) }
+                    }.disabled(!session.canRequestLayerEdit || session.activeLayer == nil)
                     Divider()
-                    Button("Move Layer Up") { session.moveActiveLayer(by: 1) }
-                        .configuredKeyboardShortcut("]").disabled(!session.canMoveActiveLayer(by: 1))
-                    Button("Move Layer Down") { session.moveActiveLayer(by: -1) }
-                        .configuredKeyboardShortcut("[").disabled(!session.canMoveActiveLayer(by: -1))
+                    Button("Move Layer Up") { if session.prepareForOutsideDocumentAction() { session.moveActiveLayer(by: 1) } }
+                        .configuredKeyboardShortcut("]").disabled(!session.canRequestMoveActiveLayer(by: 1))
+                    Button("Move Layer Down") { if session.prepareForOutsideDocumentAction() { session.moveActiveLayer(by: -1) } }
+                        .configuredKeyboardShortcut("[").disabled(!session.canRequestMoveActiveLayer(by: -1))
                     Group {
-                        Button(session.mergeTitle) { session.mergeLayers() }
-                            .configuredKeyboardShortcut("e").disabled(!session.canMergeLayers)
+                        Button(session.mergeTitle) { if session.prepareForOutsideDocumentAction() { session.mergeLayers() } }
+                            .configuredKeyboardShortcut("e").disabled(!session.canRequestMergeLayers)
                         Divider()
-                        Button("Flip Layer Horizontal") { session.flipLayers(horizontally: true) }
-                            .disabled(!session.canTransform)
-                        Button("Flip Layer Vertical") { session.flipLayers(horizontally: false) }
-                            .disabled(!session.canTransform)
+                        Button("Flip Layer Horizontal") { if session.prepareForOutsideDocumentAction() { session.flipLayers(horizontally: true) } }
+                            .disabled(!session.canRequestTransform)
+                        Button("Flip Layer Vertical") { if session.prepareForOutsideDocumentAction() { session.flipLayers(horizontally: false) } }
+                            .disabled(!session.canRequestTransform)
                     }
                     Divider()
                     Button(session.selectedEffect != nil ? "Delete " + session.selectedEffect!.kind.rawValue : session.isMaskSelected && session.activeLayer?.mask != nil ? "Delete Layer Mask" : session.selectedLayerIDs.count > 1 ? "Delete Layers" : "Delete Layer") {
-                        session.deleteLayerOrMask()
+                        if session.prepareForOutsideDocumentAction() { session.deleteLayerOrMask() }
                     }
-                        .disabled(!session.canEditLayers || session.activeLayer == nil)
+                        .disabled(!session.canRequestLayerEdit || session.activeLayer == nil)
                 }
             }
     }

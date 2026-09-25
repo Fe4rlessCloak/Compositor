@@ -74,6 +74,77 @@ struct TypeToolTests {
         #expect(session.foregroundColor == PaletteColor(red: 0, green: 0, blue: 1))
     }
 
+    @Test func outsideActionAcceptsTextColorAndFinishesDraft() throws {
+        let session = makeSession()
+        session.beginText(at: CGPoint(x: 40, y: 50))
+        session.textDraft?.style.content = "Boundary"
+        session.openTextColorPicker()
+        try #require(session.colorPicker).hsb.setRGB(PaletteColor(red: 1, green: 0, blue: 0))
+        session.previewTextColor()
+
+        #expect(session.prepareForOutsideDocumentAction())
+        #expect(session.colorPicker == nil)
+        #expect(session.textDraft == nil)
+        #expect(session.activeLayer?.liveText?.style.content == "Boundary")
+        #expect(session.activeLayer?.liveText?.style.red == 1)
+        #expect(session.foregroundColor.red == 1)
+    }
+
+    @Test func outsideActionAcceptsForegroundPickerPreviewOnText() throws {
+        let session = makeSession()
+        session.beginText(at: CGPoint(x: 40, y: 50))
+        session.textDraft?.style.content = "Palette preview"
+        session.openColorPicker(background: false)
+        try #require(session.colorPicker).hsb.setRGB(PaletteColor(red: 0, green: 1, blue: 0))
+        session.previewTextColor()
+
+        #expect(session.prepareForOutsideDocumentAction())
+        #expect(session.colorPicker == nil)
+        #expect(session.activeLayer?.liveText?.style.green == 1)
+        #expect(session.foregroundColor.green == 1)
+    }
+
+    @Test func whitespaceDraftFinishesWithoutCreatingLayer() throws {
+        let session = makeSession()
+        session.beginText(at: .zero)
+        session.textDraft?.style.content = "   \n"
+
+        #expect(session.finishText())
+        #expect(session.textDraft == nil)
+        #expect(session.document?.layers.count == 1)
+    }
+
+    @Test func filterRequestFinishesTextBeforeCapturingLayer() throws {
+        let session = makeSession()
+        session.beginText(at: CGPoint(x: 40, y: 50))
+        session.textDraft?.style.content = "Editable"
+
+        session.beginFilter(.gaussianBlur)
+
+        #expect(session.textDraft == nil)
+        #expect(session.activeLayer?.liveText?.style.content == "Editable")
+        #expect(session.filterEdit?.original.image === session.activeLayer?.asset?.image)
+        #expect(session.filterEdit != nil)
+        session.cancelFilter()
+    }
+
+    @Test func filterOnCommittedTextRasterizesAndUndoRestoresEditableText() async throws {
+        let session = makeSession()
+        session.beginText(at: CGPoint(x: 40, y: 50))
+        session.textDraft?.style.content = "Editable"
+        #expect(session.finishText())
+        let textLayerID = try #require(session.activeLayerID)
+        session.beginFilter(.gaussianBlur)
+        let filter = try #require(session.filterEdit)
+        filter.settings.radius = 2
+        await session.commitFilter()
+
+        #expect(session.activeLayer?.id == textLayerID)
+        #expect(session.activeLayer?.liveText == nil)
+        session.undo()
+        #expect(session.activeLayer?.liveText?.style.content == "Editable")
+    }
+
     @Test func transformsDuplicatesAndClippingKeepTextEditable() throws {
         let session = makeSession()
         session.beginText(at: CGPoint(x: 20, y: 20))

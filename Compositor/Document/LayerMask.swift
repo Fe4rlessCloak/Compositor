@@ -219,7 +219,9 @@ extension ProjectSnapshot {
 extension EditorSession {
     /// Layers and folders alike take a mask.
     var canEditMask: Bool { canEditLayers && selectedLayerIDs.count == 1 && activeLayer != nil }
+    var canRequestMaskEdit: Bool { canRequestLayerEdit && (hasCommittableNewTextDraft || selectedLayerIDs.count == 1 && activeLayer != nil) }
     func selectLayerTarget(_ id: UUID, mask: Bool) {
+        guard prepareForOutsideDocumentAction() else { return }
         effectSelection = nil
         guard !isProjectBusy, !isImporting, brushStroke == nil else { return }
         resolveGradient()
@@ -231,6 +233,7 @@ extension EditorSession {
     /// color with the selected area painted the opposite, so a white mask hides the selection. The
     /// selection is used up and deselected in the same undo step, as Photoshop does.
     func addMask(revealing: Bool = true) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard let selection else { addLayerMask(revealing: revealing); return }
         guard canEditMask, let layer = activeLayer, layer.mask == nil,
               let index = document?.layers.firstIndex(where: { $0.id == layer.id }) else { return }
@@ -261,6 +264,7 @@ extension EditorSession {
 
     /// A plain all-white (reveal) or all-black (hide) mask, whatever is selected.
     func addLayerMask(revealing: Bool = true) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditMask, activeLayer?.mask == nil, let mask = LayerMask.solid(revealing: revealing),
               let index = document?.layers.firstIndex(where: { $0.id == activeLayerID }) else { return }
         finishOpacityEdit()
@@ -270,6 +274,7 @@ extension EditorSession {
         endEdit()
     }
     func toggleLayerMask() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditMask, activeLayer?.mask != nil,
               let index = document?.layers.firstIndex(where: { $0.id == activeLayerID }) else { return }
         finishOpacityEdit()
@@ -278,6 +283,7 @@ extension EditorSession {
         endEdit()
     }
     func deleteLayerMask() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditMask, activeLayer?.mask != nil,
               let index = document?.layers.firstIndex(where: { $0.id == activeLayerID }) else { return }
         finishOpacityEdit()
@@ -296,6 +302,7 @@ extension EditorSession {
     /// Option-dragging a mask thumbnail onto another layer: a copy of the mask, sitting where it sits on the
     /// document, replacing any mask the layer had.
     func copyMask(from source: UUID, to target: UUID) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canCopyMask(from: source, to: target), let layers = document?.layers,
               let from = layers.first(where: { $0.id == source }), var mask = from.mask,
               let index = layers.firstIndex(where: { $0.id == target }) else { return }
@@ -310,6 +317,7 @@ extension EditorSession {
     }
     /// The link between a layer and its mask: linked they move together; unlinked each transforms on its own.
     func toggleMaskLink(_ id: UUID) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, let index = document?.layers.firstIndex(where: { $0.id == id }),
               let mask = document?.layers[index].mask else { return }
         commitTransform()
@@ -416,4 +424,3 @@ extension BrushStroke {
         }
     }
 }
-

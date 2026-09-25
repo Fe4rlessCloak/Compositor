@@ -20,8 +20,8 @@ nonisolated enum LiveMaskGraph {
 }
 
 extension EditorSession {
-    func canLinkMask(source: UUID, target: UUID) -> Bool {
-        guard canEditLayers, source != target, let layers = document?.layers,
+    func canLinkMask(source: UUID, target: UUID, ignoringText: Bool = false) -> Bool {
+        guard (ignoringText ? canRequestLayerEdit : canEditLayers), source != target, let layers = document?.layers,
               layers.contains(where: { $0.id == source && !$0.isGroup && $0.adjustment == nil }),
               layers.contains(where: { $0.id == target && !$0.isGroup }) else { return false }
         var records = layers.map(\.hierarchyRecord)
@@ -202,16 +202,17 @@ extension EditorSession {
 
 
 extension EditorSession {
-    func canToggleClippingMask(_ id: UUID) -> Bool {
-        guard canEditLayers, let layers = document?.layers,
+    func canToggleClippingMask(_ id: UUID, ignoringText: Bool = false) -> Bool {
+        guard (ignoringText ? canRequestLayerEdit : canEditLayers), let layers = document?.layers,
               let layer = layers.first(where: { $0.id == id }), !layer.isGroup else { return false }
         if layer.maskSourceID != nil { return true }
         let siblings = layers.filter { $0.parentID == layer.parentID }
         guard let index = siblings.firstIndex(where: { $0.id == id }), index > 0, !siblings[index-1].isGroup else { return false }
-        return canLinkMask(source: siblings[index-1].maskSourceID ?? siblings[index-1].id, target: id)
+        return canLinkMask(source: siblings[index-1].maskSourceID ?? siblings[index-1].id, target: id, ignoringText: ignoringText)
     }
     /// Option-click clips to the next lower sibling, sharing its base when it is already clipped.
     func toggleClippingMask(_ id: UUID) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, let layers = document?.layers,
               let layer = layers.first(where: { $0.id == id }), !layer.isGroup else { return }
         if layer.maskSourceID != nil { removeLiveMask(from: id); return }

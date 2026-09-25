@@ -283,13 +283,13 @@ private struct ProjectTabButton: View {
                 .padding(.leading, 11).padding(.trailing, 8)
                 .frame(height: 28)
                 .contentShape(Rectangle())
-            }.buttonStyle(.plain).disabled(!workspace.canSwitch && !active)
+            }.buttonStyle(.plain).disabled(!workspace.canRequestSwitch && !active)
             Button { Task { await workspace.close(tab.id) } } label: {
                 Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                     .frame(width: 16, height: 28)
                     .padding(.trailing, 5)
                     .contentShape(Rectangle())
-            }.buttonStyle(.plain).help("Close \(tab.title)").disabled(!workspace.canSwitch)
+            }.buttonStyle(.plain).help("Close \(tab.title)").disabled(!workspace.canRequestSwitch)
                 .accessibilityLabel("Close \(tab.title)")
         }
         .frame(width: projectTabPillWidth(tab, active: active), height: 28, alignment: .leading)
@@ -336,7 +336,7 @@ private struct ProjectTabDropDelegate: DropDelegate {
     func validateDrop(info: DropInfo) -> Bool {
         // Option-dragging a layer duplicates it within the Layers panel, so it is not a drag to another project.
         if NSEvent.modifierFlags.contains(.option), info.hasItemsConforming(to: [ProjectWorkspace.layerType]) { return false }
-        return workspace?.canSwitch == true && workspace?.canReceiveDrag(into: destination) == true
+        return workspace?.canRequestSwitch == true && workspace?.canReceiveDrag(into: destination) == true
             && info.hasItemsConforming(to: [ProjectWorkspace.layerType, UTType.fileURL.identifier, UTType.image.identifier])
     }
     func dropEntered(info: DropInfo) { targeted = validateDrop(info: info) }

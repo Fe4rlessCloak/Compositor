@@ -95,7 +95,7 @@ extension CanvasDocument {
 extension EditorSession {
     func selectLayers(_ ids: Set<UUID>, primary: UUID?) {
         effectSelection = nil
-        if ids != selectedLayerIDs, !finishText() { return }
+        if ids != selectedLayerIDs, !prepareForOutsideDocumentAction() { return }
         guard brushStroke == nil else { return }
         let valid = ids.intersection(Set(document?.layers.map(\.id) ?? []))
         if valid != selectedLayerIDs { commitTransform(); resolveGradient() }
@@ -117,6 +117,7 @@ extension EditorSession {
     }
 
     func groupSelectedLayers() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, let document, document.layers.count < 10_000 else { return }
         let byID = Dictionary(uniqueKeysWithValues: document.layers.map { ($0.id, $0) })
         let selected = selectedLayerIDs.intersection(Set(byID.keys))
@@ -175,6 +176,7 @@ extension EditorSession {
         return result
     }
     func addGroup() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, let document, document.layers.count < 10_000 else { return }
         let names = Set(document.layers.map(\.name))
         var number = 1
@@ -229,6 +231,7 @@ extension EditorSession {
         return true
     }
     func moveActiveLayerOutOfGroup() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard let layer = activeLayer, let parent = layer.parentID,
               let group = document?.layers.first(where: { $0.id == parent }) else { return }
         placeLayer(layer.id, in: group.parentID, above: group.id)

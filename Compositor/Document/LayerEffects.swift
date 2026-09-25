@@ -220,6 +220,7 @@ struct LayerEffectSelection: Equatable {
 
 extension EditorSession {
     var canEditEffects: Bool { canEditLayers && activeLayer?.isGroup == false && activeLayer?.asset != nil }
+    var canRequestEffectsEdit: Bool { canRequestLayerEdit && (hasCommittableNewTextDraft || activeLayer?.isGroup == false && activeLayer?.asset != nil) }
     var activeEffects: LayerEffects { activeLayer?.effects ?? LayerEffects() }
     var editingEffects: LayerEffects {
         document?.layers.first(where: { $0.id == effectsEditing?.layerID })?.effects ?? LayerEffects()
@@ -231,6 +232,7 @@ extension EditorSession {
     }
 
     func addEffect(_ kind: LayerEffectKind) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditEffects, let id = activeLayerID else { return }
         if effectsEditing == LayerEffectSelection(layerID: id, kind: kind) { return }
         finishEffectsEditing(commit: false)
@@ -262,6 +264,7 @@ extension EditorSession {
     }
 
     func selectEffect(_ kind: LayerEffectKind, on id: UUID, editing: Bool = false) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, document?.layers.first(where: { $0.id == id })?.effects?.contains(kind) == true else { return }
         let selection = LayerEffectSelection(layerID: id, kind: kind)
         if editing, effectsEditing != selection { finishEffectsEditing(commit: false) }

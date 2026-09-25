@@ -115,8 +115,10 @@ extension EditorSession {
     /// Select → Subject: the foreground Vision finds in the canvas as it is shown, outlined as a selection. The
     /// same shape Remove Background masks out, as a selection instead.
     var canSelectSubject: Bool { canEditSelection && document != nil && !isProjectBusy }
+    var canRequestSelectSubject: Bool { canRequestSelectionEdit && document != nil && !isProjectBusy }
 
     func selectSubject(mode: SelectionMode = .replace) async {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canSelectSubject, let document,
               let context = try? BrushRaster.context(width: document.width, height: document.height, mask: false) else { return }
         drawLiveComposite(document, in: context)

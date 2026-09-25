@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 @MainActor
 enum ImageFileDrop {
     static func importProviders(_ providers: [NSItemProvider], into session: EditorSession, at point: CGPoint?, projects: ProjectController? = nil, workspace: ProjectWorkspace? = nil, destination: UUID? = nil) async {
+        guard session.prepareForOutsideDocumentAction() else { return }
         var urls: [URL] = []
         var unreadable = false
         for provider in providers {

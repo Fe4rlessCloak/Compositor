@@ -150,7 +150,25 @@ final class EditorSession {
     private var fileRequestWaiters: [CheckedContinuation<Void, Never>] = []
     var canStartProjectOperation: Bool {
         _ = showsBusy // Re-evaluate in the UI when a long operation starts or ends.
-        return selectionAmountOperation == nil && textDraft == nil && !isProjectBusy && !isImporting && brushStroke == nil && warpStroke == nil && levels == nil && !showsNewDocument && !showsImporter && renamingLayerID == nil && importError == nil && adjustmentEditingID == nil && !showsConversionSheet
+        return canStartProjectOperationIgnoringText && textDraft == nil
+    }
+    var canStartProjectOperationIgnoringText: Bool {
+        _ = showsBusy
+        return selectionAmountOperation == nil && !isProjectBusy && !isImporting && brushStroke == nil && warpStroke == nil && levels == nil && !showsNewDocument && !showsImporter && renamingLayerID == nil && importError == nil && adjustmentEditingID == nil && !showsConversionSheet
+    }
+    /// Commits a live text color preview and finishes the draft before an operation reads document state.
+    /// Callers must still apply their normal busy and capability guards afterwards.
+    @discardableResult
+    func prepareForOutsideDocumentAction() -> Bool {
+        if let picker = colorPicker {
+            switch picker.target {
+            case .text: closeColorPicker(commit: true)
+            case .palette(background: false) where picker.editedText?.draftID == textDraft?.id && textDraft != nil:
+                closeColorPicker(commit: true)
+            default: break
+            }
+        }
+        return finishText()
     }
     func waitForFileRequest() async {
         while !canStartProjectOperation {
@@ -326,13 +344,13 @@ final class EditorSession {
     }
     func selectLayer(_ id: UUID?) {
         effectSelection = nil
-        if id != activeLayerID, !finishText() { return }
+        if id != activeLayerID, !prepareForOutsideDocumentAction() { return }
         guard brushStroke == nil, warpStroke == nil, levels == nil else { return }
         if id != activeLayerID { commitTransform(); resolveGradient() }
         activeLayerID = id
     }
     func selectTool(_ value: NavigationTool) {
-        if tool != value, !finishText() { return }
+        if tool != value, !prepareForOutsideDocumentAction() { return }
         guard !isProjectBusy, brushStroke == nil, warpStroke == nil, levels == nil else { return }
         if tool != value { commitTransform(); cancelCrop(); resolveGradient(); cancelLasso(); cancelShape() }
         let from = Self.tipFamily(tool), to = Self.tipFamily(value)
@@ -382,6 +400,7 @@ final class EditorSession {
     }
 
     func beginTransform(persistent: Bool = true) {
+        guard prepareForOutsideDocumentAction() else { return }
         cancelCrop()
         guard transformEdit == nil, canTransform, let layer = activeLayer else { return }
         tool = .move
@@ -403,6 +422,7 @@ final class EditorSession {
     }
     /// Option-drag duplicates selected roots with their descendants and drags the copies.
     func beginDuplicateTransform() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard transformDuplicate == nil, let primary = activeLayerID else { return }
         commitTransform()
         guard canTransform else { return }
@@ -507,6 +527,7 @@ final class EditorSession {
         return edit.layerID == layer.id ? edit.draft : nil
     }
     func nudgeLayer(dx: CGFloat, dy: CGFloat) {
+        guard prepareForOutsideDocumentAction() else { return }
         let alreadyEditing = transformEdit != nil
         if !alreadyEditing { beginTransform(persistent: false) }
         guard var value = transformEdit?.draft else { return }
@@ -607,8 +628,32 @@ final class EditorSession {
         _ = showsBusy
         return selectionAmountOperation == nil && textDraft == nil && document != nil && brushStroke == nil && warpStroke == nil && !isProjectBusy && !isImporting && !showsNewDocument && !showsImporter && renamingLayerID == nil && transformEdit == nil && cropRect == nil && gradientEdit == nil && pixelMove == nil && hueSaturation == nil && levels == nil && filterEdit == nil && adjustmentEditingID == nil
     }
+    var canRequestLayerEdit: Bool {
+        _ = showsBusy
+        return selectionAmountOperation == nil && document != nil && brushStroke == nil && warpStroke == nil && !isProjectBusy && !isImporting && !showsNewDocument && !showsImporter && renamingLayerID == nil && transformEdit == nil && cropRect == nil && gradientEdit == nil && pixelMove == nil && hueSaturation == nil && levels == nil && filterEdit == nil && adjustmentEditingID == nil
+    }
+    var hasCommittableNewTextDraft: Bool {
+        guard let draft = textDraft, draft.layerID == nil, document?.id == draft.documentID,
+              draft.style.isValid else { return false }
+        return !draft.style.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    var canRequestTransform: Bool {
+        guard canRequestLayerEdit else { return false }
+        if hasCommittableNewTextDraft { return true }
+        if transformsAsGroup { return !groupTransformMembers.isEmpty }
+        return activeLayer?.asset != nil && activeLayer?.isGroup == false
+            && activeLayerID.map { document?.effectiveVisibleIDs.contains($0) == true } == true
+    }
+    func canRequestMoveActiveLayer(by offset: Int) -> Bool {
+        guard canRequestLayerEdit, let activeLayer else { return hasCommittableNewTextDraft && offset < 0 && document?.layers.isEmpty == false }
+        let siblings = document?.layers.filter { $0.parentID == activeLayer.parentID } ?? []
+        guard let index = siblings.firstIndex(where: { $0.id == activeLayer.id }) else { return false }
+        if hasCommittableNewTextDraft { return offset < 0 && !siblings.isEmpty || offset > 0 && index + 1 < siblings.count }
+        return siblings.indices.contains(index + offset)
+    }
 
     func addBlankLayer() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, let document else { return }
         let names = Set(document.layers.map(\.name))
         var number = 1
@@ -639,6 +684,7 @@ final class EditorSession {
     }
 
     func deleteLayer(_ id: UUID) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, document?.layers.contains(where: { $0.id == id }) == true else { return }
         guard !deleteWithLiveMaskChoice(id) else { return }
         finishDeletingLayer(id, baked: [:])
@@ -651,6 +697,7 @@ final class EditorSession {
     /// Deletes every selected layer as one undo step (a selected folder takes its contents); with one
     /// layer selected, just that one.
     func deleteSelectedLayers() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, let document else { return }
         // Captured first: deleting moves the active layer, which resets the selection.
         let ids = document.layers.map(\.id).filter(selectedLayerIDs.contains)
@@ -668,6 +715,7 @@ final class EditorSession {
     }
 
     func toggleLayerVisibility(_ id: UUID) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, let index = document?.layers.firstIndex(where: { $0.id == id }) else { return }
         beginEdit(document?.layers[index].isVisible == true ? "Hide Layer" : "Show Layer")
         defer { endEdit() }
@@ -677,6 +725,7 @@ final class EditorSession {
     /// Photoshop's eye swipe: pressing an eye shows or hides that layer, and dragging over other eyes gives them the
     /// same state, all as one undo step (`beginEdit` at the press, `endEdit` when the button comes up).
     func beginVisibilitySwipe(_ id: UUID) -> Bool? {
+        guard prepareForOutsideDocumentAction() else { return nil }
         guard canEditLayers, let layer = document?.layers.first(where: { $0.id == id }) else { return nil }
         let visible = !layer.isVisible
         beginEdit(visible ? "Show Layer" : "Hide Layer")
@@ -691,6 +740,7 @@ final class EditorSession {
     func endVisibilitySwipe() { endEdit() }
 
     func reorderLayers(from offsets: IndexSet, to destination: Int) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, var layers = document?.layers.reversed().map({ $0 }),
               offsets.allSatisfy({ layers.indices.contains($0) }), (0...layers.count).contains(destination) else { return }
         // List order is top-to-bottom; the compositor stores bottom-to-top.
@@ -707,6 +757,7 @@ final class EditorSession {
         return siblings.indices.contains(index + offset)
     }
     func moveActiveLayer(by offset: Int) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canMoveActiveLayer(by: offset), let activeLayer, let layers = document?.layers else { return }
         let siblings = layers.filter { $0.parentID == activeLayer.parentID }
         guard let index = siblings.firstIndex(where: { $0.id == activeLayer.id }),
@@ -725,6 +776,7 @@ final class EditorSession {
 
     func importImages(_ urls: [URL], at point: CGPoint? = nil) async {
         guard !urls.isEmpty else { return }
+        guard prepareForOutsideDocumentAction() else { return }
         if brushStroke != nil { await finishBrush() }
         cancelCrop()
         commitTransform()

@@ -17,9 +17,14 @@ extension EditorSession {
               activeLayer?.asset != nil else { return false }
         return true
     }
+    var canRequestTransformSelection: Bool {
+        transformEdit == nil && canRequestPixelEdit && !isMaskSelected
+            && selection?.isEmpty == false && (hasCommittableNewTextDraft || activeLayer?.asset != nil)
+    }
 
     /// Cmd-T: transforms the selected pixels when there is a selection, else the layer.
     func transformCommand() {
+        guard prepareForOutsideDocumentAction() else { return }
         if canTransformSelection { Task { await beginSelectionTransform() } }
         else { beginTransform() }
     }

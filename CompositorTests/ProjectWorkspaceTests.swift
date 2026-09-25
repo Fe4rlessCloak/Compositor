@@ -55,6 +55,47 @@ import Testing
         #expect(workspace.tabs.count == 1 && workspace.current.session.document == nil)
     }
 
+    @Test func switchingAndNewCanvasFinishPendingText() throws {
+        let workspace = ProjectWorkspace()
+        let first = workspace.current
+        first.session.createDocument(width: 100, height: 100)
+        let second = workspace.addTab(reuseEmpty: false)
+        workspace.select(first.id)
+        first.session.beginText(at: .zero)
+        first.session.textDraft?.style.content = "Persisted"
+
+        workspace.select(second.id)
+        workspace.select(first.id)
+        #expect(workspace.current === first)
+        #expect(first.session.textDraft == nil)
+        #expect(first.session.activeLayer?.liveText?.style.content == "Persisted")
+
+        first.session.beginText(at: .zero)
+        first.session.textDraft?.style.content = "Second"
+        workspace.newCanvas()
+        #expect(workspace.current !== first)
+        #expect(workspace.tabs.contains(where: { $0.id == second.id }))
+        #expect(first.session.textDraft == nil)
+        #expect(first.session.activeLayer?.liveText?.style.content == "Second")
+    }
+
+    @Test func failedTextFinishKeepsCurrentProjectAndDraft() {
+        let workspace = ProjectWorkspace()
+        let first = workspace.current
+        first.session.createDocument(width: 100, height: 100)
+        let second = workspace.addTab(reuseEmpty: false)
+        workspace.select(first.id)
+        first.session.beginText(at: .zero)
+        first.session.textDraft?.style.content = "Keep editing"
+        first.session.textDraft?.style.fontSize = .nan
+
+        workspace.select(second.id)
+
+        #expect(workspace.current === first)
+        #expect(first.session.textDraft?.style.content == "Keep editing")
+        #expect(first.session.brushError != nil)
+    }
+
     @Test func crossProjectCopyRemapsIdentityAndHasIndependentUndo() async throws {
         let workspace = ProjectWorkspace()
         let first = workspace.current

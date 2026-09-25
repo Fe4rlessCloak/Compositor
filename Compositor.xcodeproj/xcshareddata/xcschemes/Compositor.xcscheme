@@ -64,6 +64,17 @@
                ReferencedContainer = "container:Compositor.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "8F311FAF304F03BC0017D14F"
+               BuildableName = "CompositorUITests.xctest"
+               BlueprintName = "CompositorUITests"
+               ReferencedContainer = "container:Compositor.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

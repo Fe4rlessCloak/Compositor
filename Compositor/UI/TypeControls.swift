@@ -72,13 +72,13 @@ struct TypeControls: View {
             }.scrollIndicators(.hidden)
             if session.textDraft != nil {
                 Button("Cancel") { session.cancelText() }
-                Button("Done") { _ = session.finishText() }
+                Button("Done") { _ = session.prepareForOutsideDocumentAction() }
             } else {
                 Button("Edit Text") { session.editActiveText() }.disabled(session.activeLayer?.liveText == nil)
             }
         }
         .textFieldStyle(.roundedBorder).padding(.horizontal, 18).toolHeaderBar()
-        .disabled(session.document == nil || session.showsBusy)
+        .disabled(session.document == nil || !session.canRequestLayerEdit)
         .onChange(of: session.colorPicker?.color) { _, _ in session.previewTextColor() }
     }
 }

@@ -100,7 +100,8 @@ extension EditorSession {
 
     @discardableResult
     func applyText(_ draft: TextDraft) -> Bool {
-        guard document?.id == draft.documentID, draft.style.isValid else { return false }
+        guard document?.id == draft.documentID else { brushError = "The text draft belongs to a document that is no longer open."; return false }
+        guard draft.style.isValid else { brushError = "The text draft contains invalid formatting or exceeds the text limits."; return false }
         let pending = textDraft
         textDraft = nil
         guard canEditLayers else { textDraft = pending; return false }
@@ -136,8 +137,8 @@ extension EditorSession {
                 document?.layers[index].transform = transform
                 endEdit()
             } else {
-                addPixelLayer(image, at: draft.origin, name: Self.layerName(for: draft.style.content), editName: "New Text Layer",
-                              dropsSelection: false, text: text)
+                guard addPixelLayer(image, at: draft.origin, name: Self.layerName(for: draft.style.content), editName: "New Text Layer",
+                                    dropsSelection: false, text: text) else { return false }
             }
             succeeded = true
             textDefaults = draft.style
@@ -153,7 +154,10 @@ extension EditorSession {
     @discardableResult
     func finishText() -> Bool {
         guard let draft = textDraft else { return true }
-        return applyText(draft)
+        let previousError = brushError
+        let finished = applyText(draft)
+        if !finished, brushError == previousError { brushError = "The text could not be finished. The draft is still open." }
+        return finished
     }
 
     func cancelText() { textDraft = nil; canvasFocusRequest += 1 }

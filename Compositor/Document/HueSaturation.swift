@@ -418,6 +418,16 @@ extension EditorSession {
         return canAdjust(allowingEmpty: true)
     }
     var canAdjustColors: Bool { canAdjust(allowingEmpty: false) }
+    var canRequestColorAdjustment: Bool {
+        guard let draft = textDraft else { return canAdjustColors }
+        guard draft.style.isValid, !draft.style.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              levels == nil, filterEdit == nil, document?.id == draft.documentID, !isProjectBusy, !isImporting,
+              brushStroke == nil, pixelMove == nil, renamingLayerID == nil, !showsNewDocument, !showsImporter,
+              selection?.isEmpty != true else { return false }
+        if draft.layerID != nil { return selectedLayerIDs.count == 1 && activeLayer?.isGroup == false && !isMaskSelected }
+        return true
+    }
+    var canRequestVignette: Bool { canVignette || canRequestColorAdjustment }
     private func canAdjust(allowingEmpty: Bool) -> Bool {
         _ = showsBusy
         guard levels == nil, filterEdit == nil, document != nil, let layer = activeLayer, !isProjectBusy, !isImporting, brushStroke == nil,
@@ -428,6 +438,7 @@ extension EditorSession {
     }
 
     func beginHueSaturation() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard hueSaturation == nil, canAdjustColors else { NSSound.beep(); return }
         commitTransform()
         if gradientEdit != nil { resolveGradient() }

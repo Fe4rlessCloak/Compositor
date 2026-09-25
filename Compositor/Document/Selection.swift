@@ -118,6 +118,7 @@ struct LassoDraft {
 extension EditorSession {
     var selection: DocumentSelection? { document?.selection }
     var canEditSelection: Bool { canEditLayers }
+    var canRequestSelectionEdit: Bool { canRequestLayerEdit }
 
     /// Shift adds, Option (with or without Shift) subtracts; otherwise the options-bar mode.
     func selectionMode(shift: Bool, option: Bool) -> SelectionMode {
@@ -291,6 +292,7 @@ extension EditorSession {
 
     /// Expand / Contract need a non-empty selection to work on.
     var canModifySelection: Bool { selection?.isEmpty == false && canEditSelection && lassoDraft == nil }
+    var canRequestModifySelection: Bool { selection?.isEmpty == false && canRequestSelectionEdit && lassoDraft == nil }
 
     enum SelectionAmountOperation: String {
         case expand = "Expand", contract = "Contract", feather = "Feather"
@@ -298,6 +300,7 @@ extension EditorSession {
 
     /// Menu commands ask for an amount; the tool header applies its input directly.
     func promptSelectionAmount(_ operation: SelectionAmountOperation) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canModifySelection else { return }
         selectionAmountOperation = operation
     }
@@ -342,16 +345,19 @@ extension EditorSession {
     }
 
     func selectAll() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard let document else { return }
         setSelection(DocumentSelection(path: CGPath(rect: CGRect(origin: .zero, size: document.size), transform: nil)), name: "Select All")
     }
 
     func deselect() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard selection != nil else { return }
         setSelection(nil, name: "Deselect")
     }
 
     func invertSelection() {
+        guard prepareForOutsideDocumentAction() else { return }
         guard let document, let current = selection else { return }
         let canvas = CGPath(rect: CGRect(origin: .zero, size: document.size), transform: nil)
         setSelection(DocumentSelection(path: canvas.subtracting(current.path, using: .winding), antialiased: current.antialiased, feather: current.feather),

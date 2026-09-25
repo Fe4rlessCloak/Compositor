@@ -22,6 +22,7 @@ extension EditorSession {
     /// the middle of the box around them — as one undo step. Masks follow the link: a linked mask flips with its
     /// layer, an unlinked one stays where it is.
     func flipLayers(horizontally: Bool) {
+        guard prepareForOutsideDocumentAction() else { return }
         commitTransform()
         guard canTransform, let document else { return }
         let members: [ImageLayer]
@@ -53,6 +54,7 @@ extension EditorSession {
     /// Flips the whole canvas: every layer, folder and placed mask, and the selection, mirrored across its middle,
     /// as one undo step.
     func flipCanvas(horizontally: Bool) {
+        guard prepareForOutsideDocumentAction() else { return }
         commitTransform()
         cancelCrop()
         guard canEditLayers, let document else { return }

@@ -132,7 +132,7 @@ struct ContentView: View {
             } else { point = nil }
             if let workspace = applicationDelegate?.workspace {
                 let destination = workspace.current.id
-                guard workspace.canSwitch, workspace.canReceiveDrag(into: destination) else { return false }
+                guard workspace.canRequestSwitch, workspace.canReceiveDrag(into: destination) else { return false }
                 Task { await workspace.receiveProviders(providers, into: destination, at: point) }
             } else {
                 Task { await ImageFileDrop.importProviders(providers, into: session, at: point) }
@@ -256,7 +256,7 @@ struct ContentView: View {
             get: { session.importError != nil }, set: { if !$0 { session.importError = nil } })) {
                 Button("OK", role: .cancel) { session.importError = nil }
             } message: { Text(session.importError ?? "") }
-        .alert("Couldn’t paint", isPresented: Binding(get: { session.brushError != nil },
+        .alert("Couldn’t complete action", isPresented: Binding(get: { session.brushError != nil },
             set: { if !$0 { session.brushError = nil } })) {
                 Button("OK") { session.brushError = nil }
             } message: { Text(session.brushError ?? "") }

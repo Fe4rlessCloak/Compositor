@@ -182,6 +182,7 @@ nonisolated struct LayerAdjustment: Codable, Equatable, Sendable {
 
 extension EditorSession {
     func addAdjustment(_ kind: AdjustmentKind) {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditLayers, let document, document.layers.count < 10_000 else { return }
         var layer = ImageLayer(name: kind.rawValue, blankSize: document.size)
         var adjustment = LayerAdjustment(kind: kind)

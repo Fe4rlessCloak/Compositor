@@ -29,6 +29,14 @@ final class ProjectWorkspace {
         return !isManaging && s.canStartProjectOperation && s.hueSaturation == nil && s.filterEdit == nil
             && s.gradientEdit == nil && s.pixelMove == nil && s.colorPicker == nil
     }
+    var canRequestSwitch: Bool {
+        let s = current.session
+        let textPicker: Bool = if let picker = s.colorPicker {
+            switch picker.target { case .text: true; case .palette(background: false): picker.editedText?.draftID == s.textDraft?.id && s.textDraft != nil; default: false }
+        } else { true }
+        return !isManaging && s.canStartProjectOperationIgnoringText && textPicker && s.hueSaturation == nil && s.filterEdit == nil
+            && s.gradientEdit == nil && s.pixelMove == nil
+    }
     init() {
         let first = ProjectTab(name: "Untitled")
         first.session.skipsInitialClipboardCanvasSize = true
@@ -45,20 +53,20 @@ final class ProjectWorkspace {
         return tab
     }
     func select(_ id: UUID) {
-        guard id != selectedID, canSwitch, tabs.contains(where: { $0.id == id }) else { return }
+        guard id != selectedID, canRequestSwitch, tabs.contains(where: { $0.id == id }), current.session.prepareForOutsideDocumentAction(), canSwitch else { return }
         current.session.commitTransform()
         selectedID = id
         current.controller.window = window
         current.controller.resumeExternalChangeCheck()
     }
     func newCanvas() {
-        guard canSwitch else { return }
+        guard canRequestSwitch, current.session.prepareForOutsideDocumentAction(), canSwitch else { return }
         current.session.commitTransform()
         _ = addTab(reuseEmpty: false)
     }
     @discardableResult
     func open(_ suppliedURL: URL? = nil) async -> Bool {
-        guard canSwitch else { return false }
+        guard canRequestSwitch, current.session.prepareForOutsideDocumentAction(), canSwitch else { return false }
         isManaging = true
         defer { isManaging = false }
         var urls = suppliedURL.map { [$0] } ?? []
@@ -88,7 +96,7 @@ final class ProjectWorkspace {
         return true
     }
     func close(_ id: UUID) async {
-        guard canSwitch, let tab = tabs.first(where: { $0.id == id }) else { return }
+        guard canRequestSwitch, let tab = tabs.first(where: { $0.id == id }), current.session.prepareForOutsideDocumentAction(), canSwitch else { return }
         isManaging = true
         defer { isManaging = false }
         tab.controller.window = window
@@ -106,13 +114,12 @@ final class ProjectWorkspace {
     var quitOrder: [ProjectTab] { [current] + tabs.filter { $0.id != current.id } }
     private func finishTextEditing() -> Bool {
         for tab in quitOrder where tab.session.textDraft != nil {
-            guard tab.session.finishText() else { return false }
+            guard tab.session.prepareForOutsideDocumentAction() else { return false }
         }
         return true
     }
     func confirmQuit() async -> Bool {
-        guard finishTextEditing() else { return false }
-        guard canSwitch else { return false }
+        guard canRequestSwitch, current.session.prepareForOutsideDocumentAction(), finishTextEditing(), canSwitch else { return false }
         isManaging = true; defer { isManaging = false }
         for tab in quitOrder {
             selectedID = tab.id; tab.controller.window = window
@@ -131,10 +138,11 @@ final class ProjectWorkspace {
     func receive(_ urls: [URL], into destination: UUID? = nil, at point: CGPoint? = nil) async {
         let files = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
         defer { for (url, scoped) in files where scoped { url.stopAccessingSecurityScopedResource() } }
-        while !canSwitch {
+        while !canRequestSwitch {
             if Task.isCancelled { return }
             try? await Task.sleep(for: .milliseconds(30))
         }
+        guard current.session.prepareForOutsideDocumentAction(), canSwitch else { return }
         isManaging = true; defer { isManaging = false }
         for url in urls {
             if url.pathExtension.lowercased() == "comp" { _ = await loadProject(url); continue }
@@ -148,6 +156,13 @@ final class ProjectWorkspace {
         }
     }
     func receiveProviders(_ providers: [NSItemProvider], into destination: UUID? = nil, at point: CGPoint? = nil) async {
+        guard destination == nil || tabs.contains(where: { $0.id == destination }) else { return }
+        while !canRequestSwitch {
+            if Task.isCancelled { return }
+            try? await Task.sleep(for: .milliseconds(30))
+        }
+        guard current.session.prepareForOutsideDocumentAction(), canSwitch else { return }
+        let receivingSession = destination.flatMap { id in tabs.first(where: { $0.id == id })?.session } ?? current.session
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(Self.layerType) {
                 let data: Data? = await withCheckedContinuation { continuation in
@@ -157,7 +172,7 @@ final class ProjectWorkspace {
                     await copyLayer(id, into: destination, at: point)
                 }
             } else {
-                await ImageFileDrop.importProviders([provider], into: current.session, at: point, workspace: self, destination: destination)
+                await ImageFileDrop.importProviders([provider], into: receivingSession, at: point, workspace: self, destination: destination)
             }
         }
     }
@@ -185,7 +200,8 @@ final class ProjectWorkspace {
     /// Copies layers (folders with all they hold) into another project, or a new one, as one undo step there. Several
     /// keep where they sit relative to each other, centered on `point` or the canvas as a whole.
     func copyLayers(_ ids: [UUID], into destination: UUID?, at point: CGPoint? = nil) async {
-        guard let id = ids.first, canSwitch, let sourceTab = tabs.first(where: { $0.session.document?.layers.contains(where: { $0.id == id }) == true }),
+        guard let id = ids.first, canRequestSwitch, current.session.prepareForOutsideDocumentAction(), canSwitch,
+              let sourceTab = tabs.first(where: { $0.session.document?.layers.contains(where: { $0.id == id }) == true }),
               sourceTab.session.canEditLayers, let snapshot = sourceTab.session.projectSnapshot(),
               let sourceDocument = sourceTab.session.document else { return }
         if let destination, destination == sourceTab.id { return }

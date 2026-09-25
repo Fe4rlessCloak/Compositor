@@ -13,6 +13,9 @@ final class ProjectController {
     var canStart: Bool {
         session.canStartProjectOperation && workspace?.isManaging != true
     }
+    var canRequestStart: Bool {
+        session.canStartProjectOperationIgnoringText && workspace?.isManaging != true
+    }
     init(session: EditorSession) { self.session = session }
 
     private func begin() -> Bool {
@@ -25,6 +28,7 @@ final class ProjectController {
 
     @discardableResult
     func save(asNew: Bool = false) async -> Bool {
+        guard session.prepareForOutsideDocumentAction() else { return false }
         guard session.document != nil else { return false }
         // Another save still writing finishes first; then this one saves whatever has changed since.
         await finishWriting()
@@ -42,6 +46,7 @@ final class ProjectController {
     func finishWriting() async { if let writing { _ = await writing.value } }
 
     func exportPNG() async {
+        guard session.prepareForOutsideDocumentAction() else { return }
         guard session.document != nil, begin() else { return }
         defer { session.isProjectBusy = false }
         guard let snapshot = session.projectSnapshot() else { return }
@@ -62,6 +67,7 @@ final class ProjectController {
     }
 
     func canvasSize() async {
+        guard session.prepareForOutsideDocumentAction() else { return }
         guard let window, let document = session.document, begin() else { return }
         defer { session.isProjectBusy = false }
         let options: CanvasSizeOptions? = await withCheckedContinuation { continuation in
@@ -84,6 +90,7 @@ final class ProjectController {
     }
 
     func imageSize() async {
+        guard session.prepareForOutsideDocumentAction() else { return }
         guard let window, let document = session.document, begin() else { return }
         defer { session.isProjectBusy = false }
         let options: ImageSizeOptions? = await withCheckedContinuation { continuation in
@@ -106,6 +113,7 @@ final class ProjectController {
     }
 
     func trim() async {
+        guard session.prepareForOutsideDocumentAction() else { return }
         guard let window, session.document != nil, begin() else { return }
         defer { session.isProjectBusy = false }
         let options: TrimOptions? = await withCheckedContinuation { continuation in
@@ -130,6 +138,7 @@ final class ProjectController {
     }
 
     func exportJPEG() async {
+        guard session.prepareForOutsideDocumentAction() else { return }
         guard let window, session.document != nil, begin() else { return }
         defer { session.isProjectBusy = false }
         guard let snapshot = session.projectSnapshot() else { return }
@@ -221,6 +230,7 @@ final class ProjectController {
     @discardableResult
     func open(_ suppliedURL: URL? = nil) async -> Bool {
         if let workspace { return await workspace.open(suppliedURL) }
+        guard session.prepareForOutsideDocumentAction() else { return false }
         guard begin() else { return false }
         defer { session.isProjectBusy = false }
         var source = suppliedURL
@@ -269,6 +279,7 @@ final class ProjectController {
 
     func newCanvas() async {
         if let workspace { workspace.newCanvas(); return }
+        guard session.prepareForOutsideDocumentAction() else { return }
         guard begin() else { return }
         let proceed = await confirmReplacement()
         session.isProjectBusy = false
@@ -279,7 +290,7 @@ final class ProjectController {
         if let workspace, let tab = workspace.tabs.first(where: { $0.controller === self }) {
             await workspace.close(tab.id); return
         }
-        guard begin() else { return }
+        guard session.prepareForOutsideDocumentAction(), begin() else { return }
         let proceed = await confirmReplacement()
         session.isProjectBusy = false
         if proceed {
@@ -290,7 +301,7 @@ final class ProjectController {
     }
 
     func confirmQuit() async -> Bool {
-        guard begin() else { return false }
+        guard session.prepareForOutsideDocumentAction(), begin() else { return false }
         defer { session.isProjectBusy = false }
         return await confirmReplacement()
     }
@@ -336,6 +347,7 @@ final class ProjectController {
         if let workspace, let tab = workspace.tabs.first(where: { $0.controller === self }) {
             await workspace.receive(urls, into: tab.id, at: point); return
         }
+        guard session.prepareForOutsideDocumentAction() else { return }
         guard !urls.isEmpty else { return }
         let files = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
         await withCheckedContinuation { completion in

@@ -33,11 +33,19 @@ extension EditorSession {
 
     /// Whether the active layer (or its mask) can take a fill or clear right now.
     var canEditPixels: Bool { canPaint }
+    var canRequestPixelEdit: Bool {
+        guard canRequestLayerEdit, selection?.isEmpty != true else { return false }
+        if hasCommittableNewTextDraft { return true }
+        guard selectedLayerIDs.count == 1, activeLayer?.isGroup == false || isMaskSelected,
+              activeLayerID.map({ document?.effectiveVisibleIDs.contains($0) == true }) == true else { return false }
+        return isMaskSelected ? activeLayer?.mask?.isEnabled == true : activeLayer?.adjustment == nil
+    }
 
     /// Fills the selection with the foreground or background color, as one undo step.
     /// With no selection it fills the whole layer; an empty selection fills nothing.
     /// On a mask the palette is black/white, so this reveals or hides.
     func fillSelection(with source: FillSource) async {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canEditPixels, let layer = activeLayer else { return }
         let value = paletteColor(background: source == .background)
         // A text layer that is still text takes the color as its own, rather than being painted over: the letters
@@ -52,6 +60,7 @@ extension EditorSession {
     /// Delete with a selection: image pixels become transparent; on a mask the
     /// selection fills with the background color, as in Photoshop.
     func clearSelectedPixels() async {
+        guard prepareForOutsideDocumentAction() else { return }
         guard selection != nil, canEditPixels, let layer = activeLayer else { return }
         if isMaskSelected { await fillSelection(with: .background); return }
         guard layer.asset != nil else { return }
@@ -61,6 +70,7 @@ extension EditorSession {
     /// The Delete key: clears the selection when there is one; otherwise deletes the
     /// targeted mask, or the layer when its pixels are targeted.
     func deleteKeyPressed() {
+        guard prepareForOutsideDocumentAction() else { return }
         if selectedEffect != nil { removeSelectedEffect(); return }
         if selection != nil { Task { await clearSelectedPixels() } }
         else { deleteLayerOrMask() }
@@ -69,6 +79,7 @@ extension EditorSession {
     /// The trash button and Delete without a selection: with one layer's mask thumbnail targeted
     /// only the mask goes; otherwise every selected layer does, in one undo step.
     func deleteLayerOrMask() {
+        guard prepareForOutsideDocumentAction() else { return }
         if selectedEffect != nil { removeSelectedEffect(); return }
         if isMaskSelected, activeLayer?.mask != nil, selectedLayerIDs.count <= 1 { deleteLayerMask() }
         else { deleteSelectedLayers() }
@@ -86,8 +97,10 @@ extension EditorSession {
               document?.effectiveVisibleIDs.contains(layer.id) == true, selection?.isEmpty != true else { return false }
         return isMaskSelected ? layer.mask?.isEnabled == true : layer.asset != nil
     }
+    var canRequestInvert: Bool { canInvert || hasCommittableNewTextDraft && canRequestLayerEdit && selection?.isEmpty != true }
 
     func invertPixels() async {
+        guard prepareForOutsideDocumentAction() else { return }
         guard canInvert else { return }
         commitTransform()
         if gradientEdit != nil { await commitGradient() }
