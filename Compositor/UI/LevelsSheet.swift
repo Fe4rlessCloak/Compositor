@@ -5,6 +5,10 @@ struct LevelsSheet: View {
     private var edit: LevelsEdit? { session.levels }
     private var settings: LevelsSettings { edit?.settings ?? LevelsSettings() }
     private var current: LevelRange { settings.current }
+    private var textLayerName: String {
+        guard let id = edit?.layerID else { return "Text layer" }
+        return session.document?.layers.first(where: { $0.id == id })?.name ?? "Text layer"
+    }
     private func update(_ change: (inout LevelsSettings) -> Void) {
         var value = settings; change(&value)
         session.updateLevels(value, preview: edit?.preview ?? true)
@@ -74,13 +78,25 @@ struct LevelsSheet: View {
             }
             Text(session.adjustmentOriginal != nil ? "Underlying pixels · alpha-weighted histogram" : session.selection == nil ? "Original pixels · alpha-weighted histogram" : "Original pixels · selection and alpha-weighted histogram")
                 .font(.caption).foregroundStyle(.secondary)
+            if edit?.textRasterizationConfirmationRequired == true {
+                TextRasterizationConfirmation(operation: "Levels", layerName: textLayerName,
+                    keepEditing: { edit?.textRasterizationConfirmationRequired = false },
+                    rasterizeAndApply: { Task { await session.commitLevels(confirmingTextRasterization: true) } })
+            }
             Divider()
             HStack {
-                Button("Cancel") { session.cancelLevels() }.configuredNativeShortcut(.escape)
+                Button("Cancel") {
+                    if let edit, edit.textRasterizationConfirmationRequired {
+                        edit.textRasterizationConfirmationRequired = false
+                    } else {
+                        session.cancelLevels()
+                    }
+                }.configuredNativeShortcut(.escape)
                 Spacer()
                 if edit?.committing == true { ProgressView().controlSize(.small) }
                 Button("OK") { Task { await session.commitLevels() } }
                     .configuredNativeShortcut(.return).buttonStyle(.borderedProminent)
+                    .disabled(edit?.textRasterizationConfirmationRequired == true)
             }
         }
         .padding(24).frame(width: 440).fixedSize()

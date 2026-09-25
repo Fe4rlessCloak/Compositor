@@ -286,6 +286,7 @@ final class FilterEdit {
     var settings: FilterSettings
     var preview = true
     var committing = false
+    var textRasterizationConfirmationRequired = false
     var previewError: String?
     var preparing = false
     /// Add Noise's grain, fixed while the panel is open so changing Amount doesn't reshuffle it.
@@ -464,6 +465,10 @@ final class FilterEdit {
 }
 
 extension EditorSession {
+    func hasLiveTextLayer(id: UUID) -> Bool {
+        document?.layers.first(where: { $0.id == id })?.liveText != nil
+    }
+
     var canContentAwareFill: Bool {
         canAdjustColors && !isMaskSelected && selection?.isEmpty == false && filterEdit == nil && hueSaturation == nil
     }
@@ -568,9 +573,7 @@ extension EditorSession {
         brushRevision += 1
     }
 
-    func commitFilter() async {
-        if case .gradientMap = colorPicker?.target { closeColorPicker(commit: true) }
-        if case .vignette = colorPicker?.target { closeColorPicker(commit: true) }
+    func commitFilter(confirmingTextRasterization: Bool = false) async {
         if finishAdjustmentEditing(commit: true) { return }
         guard let edit = filterEdit, !edit.committing else { return }
         if edit.kind.isAutomatic {
@@ -581,7 +584,6 @@ extension EditorSession {
         // A hidden Camera Raw group is absent from the layer. Remember that rendered grade, including
         // when every remaining amount is zero, so the next open does not put the hidden sliders back.
         let rendered = edit.renderSettings()
-        if edit.kind == .cameraRaw { filterSettings = rendered }
         // No distortion to remove: close as Cancel does, without an undo step.
         if (edit.kind == .lensCorrection && edit.settings.distortion == 0)
             || (edit.kind == .vignette && edit.settings.vignetteAmount == 0)
@@ -590,7 +592,21 @@ extension EditorSession {
                 (edit.settings.tonalShadows == 0 && edit.settings.tonalMidtones == 0 && edit.settings.tonalHighlights == 0)))
             || (edit.kind == .exposure && edit.settings.exposure == ExposureSettings())
             || (edit.kind == .grain && edit.settings.grain.amount == 0)
-            || (edit.kind == .cameraRaw && rendered.cameraRaw.isIdentity) { cancelFilter(); return }
+            || (edit.kind == .cameraRaw && rendered.cameraRaw.isIdentity) {
+            if edit.kind == .cameraRaw { filterSettings = rendered }
+            if case .gradientMap = colorPicker?.target { closeColorPicker(commit: true) }
+            if case .vignette = colorPicker?.target { closeColorPicker(commit: true) }
+            cancelFilter()
+            return
+        }
+        if edit.kind != .removeBackground, hasLiveTextLayer(id: edit.layerID), !confirmingTextRasterization {
+            edit.textRasterizationConfirmationRequired = true
+            return
+        }
+        edit.textRasterizationConfirmationRequired = false
+        if case .gradientMap = colorPicker?.target { closeColorPicker(commit: true) }
+        if case .vignette = colorPicker?.target { closeColorPicker(commit: true) }
+        if edit.kind == .cameraRaw { filterSettings = rendered }
         edit.committing = true
         edit.previewTask?.cancel()
         if edit.kind != .cameraRaw { filterSettings = edit.settings }

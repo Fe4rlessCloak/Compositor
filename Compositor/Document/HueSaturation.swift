@@ -375,6 +375,7 @@ final class HueSaturationEdit {
     @ObservationIgnored let previewPixelToDocument: CGAffineTransform
     var settings = HueSaturationSettings()
     var preview = true
+    var textRasterizationConfirmationRequired = false
     /// What the canvas shows while the dialog is open; nil means the layer's own pixels.
     /// Not observed: canvas redraws are driven by `brushRevision`.
     @ObservationIgnored private(set) var preparedPreview: CGImage?
@@ -478,9 +479,15 @@ extension EditorSession {
 
     /// OK: renders at full quality and records one "Hue/Saturation" undo step. Identity
     /// settings change nothing at all.
-    func commitHueSaturation() async {
+    func commitHueSaturation(confirmingTextRasterization: Bool = false) async {
         if finishAdjustmentEditing(commit: true) { return }
         guard let edit = hueSaturation else { return }
+        if edit.settings.isIdentity { cancelHueSaturation(); return }
+        if hasLiveTextLayer(id: edit.layerID), !confirmingTextRasterization {
+            edit.textRasterizationConfirmationRequired = true
+            return
+        }
+        edit.textRasterizationConfirmationRequired = false
         hueSampleMode = nil
         hueTargeting = false
         hueTargetDrag = nil
@@ -493,7 +500,6 @@ extension EditorSession {
             hueSaturation = nil
             brushRevision += 1
         }
-        guard !settings.isIdentity else { return }
         isProjectBusy = true
         defer { isProjectBusy = false }
         let job = HueSaturationJob(image: edit.original.image, settings: settings,

@@ -114,6 +114,7 @@ final class LevelsEdit {
     var settings = LevelsSettings()
     var preview = true
     var committing = false
+    var textRasterizationConfirmationRequired = false
     var histogram: [[Double]] = Array(repeating: Array(repeating: 0, count: 256), count: 4)
     var histogramReady = false
     @ObservationIgnored var preparedPreview: CGImage?
@@ -192,10 +193,15 @@ extension EditorSession {
         edit.previewTask?.cancel(); edit.histogramTask?.cancel()
         levels = nil; brushRevision += 1
     }
-    func commitLevels() async {
+    func commitLevels(confirmingTextRasterization: Bool = false) async {
         if finishAdjustmentEditing(commit: true) { return }
         guard let edit = levels, !edit.committing else { return }
         if edit.settings.isIdentity { cancelLevels(); return }
+        if hasLiveTextLayer(id: edit.layerID), !confirmingTextRasterization {
+            edit.textRasterizationConfirmationRequired = true
+            return
+        }
+        edit.textRasterizationConfirmationRequired = false
         edit.committing = true
         edit.previewTask?.cancel(); edit.histogramTask?.cancel()
         isProjectBusy = true
