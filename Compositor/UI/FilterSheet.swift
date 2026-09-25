@@ -12,6 +12,10 @@ struct FilterSheet: View {
     }
 
     private var isCameraRaw: Bool { edit?.kind == .cameraRaw }
+    private var textLayerName: String {
+        guard let id = edit?.layerID else { return "Text layer" }
+        return session.document?.layers.first(where: { $0.id == id })?.name ?? "Text layer"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -139,9 +143,21 @@ struct FilterSheet: View {
             if session.adjustmentOriginal == nil && session.selection != nil {
                 Text("Limited to the selection").font(.callout).foregroundStyle(.secondary)
             }
+            if edit?.textRasterizationConfirmationRequired == true {
+                TextRasterizationConfirmation(operation: edit?.kind.rawValue ?? "This adjustment",
+                    layerName: textLayerName,
+                    keepEditing: { edit?.textRasterizationConfirmationRequired = false },
+                    rasterizeAndApply: { Task { await session.commitFilter(confirmingTextRasterization: true) } })
+            }
             Divider()
             HStack {
-                Button("Cancel") { session.cancelFilter() }.configuredNativeShortcut(.escape)
+                Button("Cancel") {
+                    if let edit, edit.textRasterizationConfirmationRequired {
+                        edit.textRasterizationConfirmationRequired = false
+                    } else {
+                        session.cancelFilter()
+                    }
+                }.configuredNativeShortcut(.escape)
                 Spacer()
                 // While the preview is being worked out (Remove Background's mask, Content-Aware Fill) OK waits, so
                 // the panel says what it is waiting for rather than showing a disabled button and nothing else.
@@ -152,7 +168,8 @@ struct FilterSheet: View {
                 }
                 Button("OK") { Task { await session.commitFilter() } }
                     .configuredNativeShortcut(.return).buttonStyle(.borderedProminent)
-                    .disabled(edit?.kind.isAutomatic == true && (edit?.preparing == true || edit?.previewError != nil))
+                    .disabled(edit?.textRasterizationConfirmationRequired == true
+                        || (edit?.kind.isAutomatic == true && (edit?.preparing == true || edit?.previewError != nil)))
             }
         }
         .padding(24)
@@ -189,6 +206,31 @@ struct FilterSheet: View {
                 .frame(width: 56).textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing)
                 .unitSuffix(unit)
         }
+    }
+}
+
+struct TextRasterizationConfirmation: View {
+    let operation: String
+    let layerName: String
+    let keepEditing: () -> Void
+    let rasterizeAndApply: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Rasterize Editable Text?").font(.headline)
+            Text("Applying \(operation) will turn “\(layerName)” into pixels. Its text, font, and color will no longer be editable. Undo can restore the editable text.")
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button("Keep Editing", action: keepEditing)
+                Button("Rasterize and Apply", role: .destructive, action: rasterizeAndApply)
+                    .configuredNativeShortcut(.return).buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.secondary.opacity(0.35)) }
+        .accessibilityElement(children: .contain)
     }
 }
 

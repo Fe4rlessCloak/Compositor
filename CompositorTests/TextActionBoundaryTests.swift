@@ -13,6 +13,13 @@ struct TextActionBoundaryTests {
         return session
     }
 
+    private func committedText(_ content: String = "Editable") throws -> EditorSession {
+        let session = draft(content)
+        #expect(session.finishText())
+        #expect(session.activeLayer?.liveText?.style.content == content)
+        return session
+    }
+
     @Test func layerAndSelectionCommandsCommitBeforeChangingTheDocument() throws {
         let session = draft()
         #expect(!session.canEditLayers && session.canRequestLayerEdit)
@@ -110,7 +117,7 @@ struct TextActionBoundaryTests {
         #expect(session.filterEdit?.original.image === session.activeLayer?.asset?.image)
         let filter = try #require(session.filterEdit)
         filter.settings.radius = 2
-        await session.commitFilter()
+        await session.commitFilter(confirmingTextRasterization: true)
         #expect(session.activeLayer?.liveText == nil)
         session.undo()
         #expect(session.activeLayer?.liveText?.style.content == "Edited before blur")
@@ -126,9 +133,86 @@ struct TextActionBoundaryTests {
         #expect(session.filterEdit?.original.image === session.activeLayer?.asset?.image)
         let filter = try #require(session.filterEdit)
         filter.settings.radius = 2
-        await session.commitFilter()
+        await session.commitFilter(confirmingTextRasterization: true)
         #expect(session.activeLayer?.liveText == nil)
         session.undo()
         #expect(session.activeLayer?.liveText?.style.content == "New text before blur")
+    }
+
+    @Test func filterPreviewWaitsForTextRasterizationConfirmation() async throws {
+        let session = try committedText()
+        session.beginFilter(.gaussianBlur)
+        let edit = try #require(session.filterEdit)
+        edit.settings.radius = 2
+
+        await session.commitFilter()
+        #expect(session.filterEdit === edit)
+        #expect(edit.textRasterizationConfirmationRequired)
+        #expect(session.activeLayer?.liveText?.style.content == "Editable")
+
+        edit.textRasterizationConfirmationRequired = false // Keep Editing
+        #expect(session.filterEdit === edit)
+        #expect(session.activeLayer?.liveText?.style.content == "Editable")
+        await session.commitFilter(confirmingTextRasterization: true)
+        #expect(session.filterEdit == nil)
+        #expect(session.activeLayer?.liveText == nil)
+        session.undo()
+        #expect(session.activeLayer?.liveText?.style.content == "Editable")
+    }
+
+    @Test func levelsPreviewWaitsForTextRasterizationConfirmation() async throws {
+        let session = try committedText()
+        session.beginLevels()
+        let edit = try #require(session.levels)
+        var settings = edit.settings
+        var range = settings.current
+        range.gamma = 2
+        settings.current = range
+        edit.settings = settings
+
+        await session.commitLevels()
+        #expect(session.levels === edit)
+        #expect(edit.textRasterizationConfirmationRequired)
+        #expect(session.activeLayer?.liveText?.style.content == "Editable")
+
+        edit.textRasterizationConfirmationRequired = false // Keep Editing
+        #expect(session.levels === edit)
+        await session.commitLevels(confirmingTextRasterization: true)
+        #expect(session.levels == nil)
+        #expect(session.activeLayer?.liveText == nil)
+        session.undo()
+        #expect(session.activeLayer?.liveText?.style.content == "Editable")
+    }
+
+    @Test func hueSaturationPreviewWaitsForTextRasterizationConfirmation() async throws {
+        let session = try committedText()
+        session.beginHueSaturation()
+        let edit = try #require(session.hueSaturation)
+        var settings = edit.settings
+        settings.hue = 30
+        edit.settings = settings
+
+        await session.commitHueSaturation()
+        #expect(session.hueSaturation === edit)
+        #expect(edit.textRasterizationConfirmationRequired)
+        #expect(session.activeLayer?.liveText?.style.content == "Editable")
+
+        edit.textRasterizationConfirmationRequired = false // Keep Editing
+        #expect(session.hueSaturation === edit)
+        await session.commitHueSaturation(confirmingTextRasterization: true)
+        #expect(session.hueSaturation == nil)
+        #expect(session.activeLayer?.liveText == nil)
+        session.undo()
+        #expect(session.activeLayer?.liveText?.style.content == "Editable")
+    }
+
+    @Test func identityFilterDoesNotAskToRasterizeText() async throws {
+        let session = try committedText()
+        session.beginFilter(.lensCorrection)
+        let edit = try #require(session.filterEdit)
+        await session.commitFilter()
+        #expect(session.filterEdit == nil)
+        #expect(!edit.textRasterizationConfirmationRequired)
+        #expect(session.activeLayer?.liveText?.style.content == "Editable")
     }
 }

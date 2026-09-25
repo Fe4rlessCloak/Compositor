@@ -39,41 +39,9 @@ final class CanvasTextView: NSTextView {
     override func resetCursorRects() {}
 }
 
-/// Draws the text selection above NSTextView's transparent glyph layer. It is a passive overlay, so AppKit keeps
-/// ownership of selection ranges, marked text, insertion, clipboard, and text undo.
-private final class TextSelectionOutlineOverlay: NSView {
-    weak var textView: CanvasTextView?
-    var logicalScale: CGFloat = 1
-    override var isFlipped: Bool { true }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func draw(_ dirtyRect: NSRect) {
-        guard let textView, let layoutManager = textView.layoutManager,
-              let container = textView.textContainer else { return }
-        let selection = textView.selectedRange()
-        guard selection.length > 0 else { return }
-        layoutManager.ensureLayout(for: container)
-        let glyphs = layoutManager.glyphRange(forCharacterRange: selection, actualCharacterRange: nil)
-        guard glyphs.length > 0 else { return }
-        let width = 1 / max(0.1, logicalScale)
-        let path = NSBezierPath()
-        path.lineWidth = width
-        let origin = textView.textContainerOrigin
-        layoutManager.enumerateEnclosingRects(forGlyphRange: glyphs,
-                                              withinSelectedGlyphRange: glyphs,
-                                              in: container) { rect, _ in
-            guard !rect.isEmpty else { return }
-            path.appendRect(rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: width / 2, dy: width / 2))
-        }
-        guard !path.isEmpty else { return }
-        NSColor.controlAccentColor.setStroke()
-        path.stroke()
-    }
-}
-
 final class InlineTextEditor: NSView, NSTextViewDelegate {
     weak var canvas: CanvasView?
     let textView = CanvasTextView(frame: .zero)
-    private let selectionOutline = TextSelectionOutlineOverlay(frame: .zero)
     fileprivate var draftID: UUID?
     private var shownStyle: LayerTextStyle?
     private var synchronizing = false
@@ -87,10 +55,6 @@ final class InlineTextEditor: NSView, NSTextViewDelegate {
         let scale: CGFloat
     }
     private var shownGeometry: Geometry?
-    fileprivate var selectionOutlineScale: CGFloat {
-        guard let geometry = shownGeometry else { return 1 }
-        return geometry.scale * geometry.transform.size.width / max(1, geometry.logicalSize.width)
-    }
     private var measuredStyle: LayerTextStyle?
     private var measuredSize: CGSize = .zero
     private var resize: (handle: Int, draft: TextDraft, transform: LayerTransform, start: CGPoint)?
@@ -115,11 +79,8 @@ final class InlineTextEditor: NSView, NSTextViewDelegate {
         textView.textContainer?.heightTracksTextView = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
-        // Keep native selection and IME behavior while letting an accent outline show over canvas glyphs.
-        textView.selectedTextAttributes = [:]
-        selectionOutline.textView = textView
-        selectionOutline.autoresizingMask = [.width, .height]
-        textView.addSubview(selectionOutline, positioned: .above, relativeTo: nil)
+        // The selection shows through to the text the canvas draws beneath it.
+        textView.selectedTextAttributes = [.backgroundColor: NSColor.selectedTextBackgroundColor.withAlphaComponent(0.45)]
         textView.setAccessibilityLabel("Canvas text")
         // Both backed by layers from the start. Left to AppKit, the text surface's layer is first placed in the
         // canvas's own layer tree and only moved inside this view a frame later; with a flipped layer, whose
@@ -181,13 +142,11 @@ final class InlineTextEditor: NSView, NSTextViewDelegate {
             let padding = LayerTextStyle.padding
             let textFrame = bounds.insetBy(dx: padding, dy: padding)
             if textView.frame != textFrame { textView.frame = textFrame }
-            selectionOutline.frame = textView.bounds
             // Mirroring belongs to the text surface, leaving resize handles in their logical order.
             mirror = (transform.flipX, transform.flipY)
             applyMirror()
             handleSize = max(2, 6 / max(0.01, scale * transform.size.width / logicalSize.width))
             shownGeometry = geometry
-            selectionOutline.logicalScale = selectionOutlineScale
             needsDisplay = true
         }
         if shownStyle != style {
@@ -205,7 +164,6 @@ final class InlineTextEditor: NSView, NSTextViewDelegate {
             }
             shownStyle = style
             synchronizing = false
-            selectionOutline.needsDisplay = true
             needsDisplay = true
         }
         if isHidden { isHidden = false }
@@ -228,13 +186,9 @@ final class InlineTextEditor: NSView, NSTextViewDelegate {
         draft.style.content = textView.string
         shownStyle = draft.style
         session.textDraft = draft
-        selectionOutline.needsDisplay = true
         // NSTextView draws the changed glyphs itself. Refresh the box's overflow marker
         // without resetting the text container's geometry on every keystroke.
         needsDisplay = true
-    }
-    func textViewDidChangeSelection(_ notification: Notification) {
-        selectionOutline.needsDisplay = true
     }
     func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
         textView.string.utf16.count - affectedCharRange.length + (replacementString?.utf16.count ?? 0) <= 100_000

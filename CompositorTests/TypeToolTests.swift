@@ -137,7 +137,7 @@ struct TypeToolTests {
         session.beginFilter(.gaussianBlur)
         let filter = try #require(session.filterEdit)
         filter.settings.radius = 2
-        await session.commitFilter()
+        await session.commitFilter(confirmingTextRasterization: true)
 
         #expect(session.activeLayer?.id == textLayerID)
         #expect(session.activeLayer?.liveText == nil)

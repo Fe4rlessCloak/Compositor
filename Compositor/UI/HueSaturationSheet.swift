@@ -7,6 +7,10 @@ struct HueSaturationSheet: View {
 
     private var edit: HueSaturationEdit? { session.hueSaturation }
     private var current: HueSaturationSettings { edit?.settings ?? HueSaturationSettings() }
+    private var textLayerName: String {
+        guard let id = edit?.layerID else { return "Text layer" }
+        return session.document?.layers.first(where: { $0.id == id })?.name ?? "Text layer"
+    }
     private var hueRange: ClosedRange<Double> { current.colorize ? 0...360 : -180...180 }
     private var saturationRange: ClosedRange<Double> { current.colorize ? 0...100 : -100...100 }
     private var showsSpectrum: Bool { current.range != .master && !current.colorize }
@@ -49,12 +53,24 @@ struct HueSaturationSheet: View {
             if session.adjustmentOriginal == nil && session.selection != nil {
                 Text("Limited to the selection").font(.callout).foregroundStyle(.secondary)
             }
+            if edit?.textRasterizationConfirmationRequired == true {
+                TextRasterizationConfirmation(operation: "Hue/Saturation", layerName: textLayerName,
+                    keepEditing: { edit?.textRasterizationConfirmationRequired = false },
+                    rasterizeAndApply: { Task { await session.commitHueSaturation(confirmingTextRasterization: true) } })
+            }
             Divider()
             HStack {
-                Button("Cancel") { session.cancelHueSaturation() }.configuredNativeShortcut(.escape)
+                Button("Cancel") {
+                    if let edit, edit.textRasterizationConfirmationRequired {
+                        edit.textRasterizationConfirmationRequired = false
+                    } else {
+                        session.cancelHueSaturation()
+                    }
+                }.configuredNativeShortcut(.escape)
                 Spacer()
                 Button("OK") { Task { await session.commitHueSaturation() } }
                     .configuredNativeShortcut(.return).buttonStyle(.borderedProminent)
+                    .disabled(edit?.textRasterizationConfirmationRequired == true)
             }
         }
         .padding(24).frame(width: 460).fixedSize()
